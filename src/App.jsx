@@ -1,5 +1,6 @@
 
 import { useEffect, useMemo, useState } from "react";
+import { QRCodeCanvas } from "qrcode.react";
 import { supabase } from "./supabaseClient";
 import "./index.css";
 
@@ -117,6 +118,7 @@ const emptyBooking = {
   mobile: "",
   address: "",
   complaintNotes: "",
+  priority: "Normal",
   serviceId: "",
   paymentMethod: "pending",
   emiMonths: "6",
@@ -133,7 +135,15 @@ const emptyLead = {
   source: "Manual",
   interest: "Service",
   status: "New",
+  assigned_telecaller_id: "",
   follow_up_date: todayISO(),
+  notes: "",
+};
+
+const emptyTechnicianPart = {
+  technician_id: "",
+  inventory_item_id: "",
+  quantity: "1",
   notes: "",
 };
 
@@ -165,6 +175,7 @@ const emptyPlan = {
 const emptyProduct = {
   name: "",
   price: "",
+  min_down_payment: "",
   warranty_validity_days: "365",
   free_visits_enabled: true,
   free_visits: "4",
@@ -221,6 +232,12 @@ function getLocalMonthKey(date = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function getPreviousMonthKey(monthKey) {
+  const [year, month] = String(monthKey || getLocalMonthKey()).split("-").map(Number);
+  const d = new Date(year, month - 2, 1);
+  return getLocalMonthKey(d);
+}
+
 function getRecordMonthKey(record) {
   const rawDate = record?.invoice_date || record?.created_at || record?.date;
   if (!rawDate) return "";
@@ -266,6 +283,24 @@ function nextMonthlyDate(dateString) {
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function generateOtp() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function normalizeMobile(value) {
+  return String(value || "").replace(/\D/g, "").slice(-10);
+}
+
+function getBookingPriority(booking) {
+  const base = String(booking?.priority || "Normal");
+  const order = ["Normal", "Medium", "High", "Critical"];
+  const baseIndex = Math.max(order.findIndex((p) => p.toLowerCase() === base.toLowerCase()), 0);
+  const createdAt = booking?.created_at ? new Date(booking.created_at) : new Date();
+  const ageDays = Math.max(Math.floor((Date.now() - createdAt.getTime()) / 86400000), 0);
+  const extra = ageDays >= 3 ? 3 : ageDays >= 2 ? 2 : ageDays >= 1 ? 1 : 0;
+  return order[Math.min(baseIndex + extra, order.length - 1)];
 }
 
 function isCompletedStatus(status) {
@@ -339,6 +374,18 @@ function coverageLabel(value) {
   return "Selected Coverage";
 }
 
+function getCustomerCoverageStatus(mobile, coverages = []) {
+  const cleanMobile = String(mobile || "").replace(/\D/g, "");
+  const customerCoverages = coverages.filter((c) => String(c.mobile || "").replace(/\D/g, "") === cleanMobile);
+  const activeCoverage = customerCoverages.find(isActive);
+
+  if (activeCoverage?.source_type === "amc") return "Under AMC";
+  if (activeCoverage?.source_type === "new_sale") return "Under Warranty";
+  if (activeCoverage) return "Under Coverage";
+  if (customerCoverages.length > 0) return "Out of Warranty";
+  return "New Customer";
+}
+
 async function saveJobAssignment(bookingId, technicianId) {
   const { data: existing, error: findError } = await supabase
     .from("job_assignments")
@@ -383,8 +430,11 @@ export default function App() {
   const [invoiceItems, setInvoiceItems] = useState([]);
   const [usage, setUsage] = useState([]);
   const [inventoryPurchases, setInventoryPurchases] = useState([]);
+  const [technicianParts, setTechnicianParts] = useState([]);
   const [businessSettings, setBusinessSettings] = useState(null);
   const [leads, setLeads] = useState([]);
+  const [bookingDraft, setBookingDraft] = useState(null);
+  const [selectedCustomerMobile, setSelectedCustomerMobile] = useState("");
   const [language, setLanguage] = useState("en");
   const [loading, setLoading] = useState(false);
   const [dataErrors, setDataErrors] = useState([]);
@@ -409,6 +459,7 @@ export default function App() {
         "invoice_payments",
         "invoice_items",
         "inventory_usage",
+        "technician_parts",
         "business_settings",
         "user_roles",
         "leads"
@@ -491,6 +542,7 @@ export default function App() {
         "invoice_payments",
         "invoice_items",
         "inventory_usage",
+        "technician_parts",
         "business_settings",
         "user_roles",
         "leads"
@@ -550,6 +602,7 @@ async function loadAll() {
       invoicePaymentsRes,
       invoiceItemsRes,
       usageRes,
+      technicianPartsRes,
       businessSettingsRes,
       inventoryPurchasesRes,
       leadsRes,
@@ -570,6 +623,7 @@ async function loadAll() {
       supabase.from("invoice_payments").select("*").order("payment_date", { ascending: false }),
       supabase.from("invoice_items").select("*").order("created_at", { ascending: false }),
       supabase.from("inventory_usage").select("*").order("created_at", { ascending: false }),
+      supabase.from("technician_parts").select("*").order("created_at", { ascending: false }),
       supabase.from("business_settings").select("*").limit(1).maybeSingle(),
       supabase.from("inventory_purchases").select("*").order("restock_date", { ascending: false }),
       supabase.from("leads").select("*").order("created_at", { ascending: false }),
@@ -592,6 +646,7 @@ async function loadAll() {
       ["invoice_payments", invoicePaymentsRes],
       ["invoice_items", invoiceItemsRes],
       ["inventory_usage", usageRes],
+      ["technician_parts", technicianPartsRes],
       ["business_settings", businessSettingsRes],
       ["inventory_purchases", inventoryPurchasesRes],
       ["leads", leadsRes],
@@ -624,6 +679,7 @@ async function loadAll() {
     setInvoicePayments(invoicePaymentsRes.data || []);
     setInvoiceItems(invoiceItemsRes.data || []);
     setUsage(usageRes.data || []);
+    setTechnicianParts(technicianPartsRes.data || []);
     setBusinessSettings(businessSettingsRes.data || null);
     setLeads(leadsRes.data || []);
     setLanguage(businessSettingsRes.data?.app_language || "en");
@@ -664,7 +720,9 @@ async function loadAll() {
 
   const stats = useMemo(() => {
     const month = getDashboardMonthKey(bookings, invoices);
+    const lastMonth = getPreviousMonthKey(month);
     const currentMonthInvoices = invoices.filter((i) => getRecordMonthKey(i) === month);
+    const lastMonthInvoices = invoices.filter((i) => getRecordMonthKey(i) === lastMonth);
     const currentMonthAmc = currentMonthInvoices.filter((i) => i.invoice_type === "amc");
     const currentMonthSales = currentMonthInvoices.filter((i) => i.invoice_type === "new_sale");
     const currentMonthService = currentMonthInvoices.filter((i) => !["amc", "new_sale"].includes(i.invoice_type));
@@ -675,17 +733,20 @@ async function loadAll() {
     const lowStock = inventory.filter((p) => Number(p.stock_qty || 0) <= Number(p.low_stock_qty || 0)).length;
     const serviceDue = coverages.filter((c) => c.next_service_due_date && String(c.next_service_due_date) <= todayISO() && isActive(c)).length;
     const emiDue = invoices.filter((i) => i.payment_method === "emi" && getDueAmount(i) > 0 && i.emi_next_due_date && String(i.emi_next_due_date) <= todayISO()).length;
+    const rentDue = invoices.filter((i) => i.invoice_type === "rental" && i.rental_next_due_date && String(i.rental_next_due_date) <= todayISO()).length;
     const paymentFollowUpsDue = invoices.filter((i) => getDueAmount(i) > 0 && i.collection_follow_up_date && String(i.collection_follow_up_date) <= todayISO()).length;
     const leadFollowUpsDue = leads.filter((l) => l.follow_up_date && String(l.follow_up_date) <= todayISO() && !["Converted", "Lost"].includes(l.status)).length;
-    const remindersDue = serviceDue + emiDue + paymentFollowUpsDue + leadFollowUpsDue;
+    const remindersDue = serviceDue + emiDue + rentDue + paymentFollowUpsDue + leadFollowUpsDue;
     const completedJobs = getCompletedJobsCount(jobs, invoices);
 
     return {
       monthInvoices: currentMonthInvoices.length,
       month,
+      lastMonth,
       currentMonthSales: currentMonthSales.reduce((s, i) => s + getPaidAmount(i), 0),
       currentMonthAmc: currentMonthAmc.reduce((s, i) => s + getPaidAmount(i), 0),
       currentMonthService: currentMonthService.reduce((s, i) => s + getPaidAmount(i), 0),
+      lastMonthCollection: lastMonthInvoices.reduce((sum, i) => sum + getPaidAmount(i), 0),
       totalBookings: currentMonthBookings.length || bookings.length,
       totalCollection,
       pending,
@@ -744,6 +805,7 @@ async function loadAll() {
           language={language}
           setLanguage={setLanguage}
           authUser={authUser}
+          businessSettings={businessSettings}
           onLocalLogout={() => {
             setAuthUser(null);
             setPage("login");
@@ -757,11 +819,13 @@ async function loadAll() {
             jobs={jobs}
             bookings={bookings}
             technicians={technicians}
+            technicianParts={technicianParts}
             inventory={inventory}
             coverages={coverages}
             invoices={invoices}
             amcPlans={amcPlans}
             products={products}
+            businessSettings={businessSettings}
             onUpdated={loadAll}
           />
         </main>
@@ -779,6 +843,7 @@ async function loadAll() {
           language={language}
           setLanguage={setLanguage}
           authUser={authUser}
+          businessSettings={businessSettings}
           onLocalLogout={() => {
             setAuthUser(null);
             setPage("login");
@@ -793,6 +858,7 @@ async function loadAll() {
             leads={leads}
             services={services}
             technicians={technicians}
+            customers={customers}
             onUpdated={loadAll}
           />
         </main>
@@ -809,6 +875,7 @@ async function loadAll() {
         language={language}
         setLanguage={setLanguage}
         authUser={authUser}
+        businessSettings={businessSettings}
         onLocalLogout={() => {
           setAuthUser(null);
           setPage("login");
@@ -837,21 +904,26 @@ async function loadAll() {
           />
         )}
 
-        {page === "booking" && <NewBooking services={services} technicians={technicians} onDone={async () => { await loadAll(); setPage("jobs"); }} />}
-        {page === "jobs" && <JobsPage bookings={bookings} jobs={jobs} technicians={technicians} inventory={inventory} coverages={coverages} invoices={invoices}
+        {page === "booking" && <NewBooking services={services} technicians={technicians} customers={customers} initialLead={bookingDraft} onDone={async () => { setBookingDraft(null); await loadAll(); setPage("jobs"); }} />}
+        {page === "jobs" && <JobsPage bookings={bookings} jobs={jobs} technicians={technicians} technicianParts={technicianParts} inventory={inventory} coverages={coverages} invoices={invoices}
             amcPlans={amcPlans}
-            products={products} onUpdated={loadAll} />}
-        {page === "technician" && <TechnicianPanel jobs={jobs} bookings={bookings} technicians={technicians} inventory={inventory} coverages={coverages} invoices={invoices}
+            products={products} businessSettings={businessSettings} onUpdated={loadAll} />}
+        {page === "openJobs" && <JobListPage title="Open Jobs" type="open" bookings={bookings} jobs={jobs} technicians={technicians} coverages={coverages} setPage={setPage} />}
+        {page === "completedJobs" && <JobListPage title="Completed Jobs" type="completed" bookings={bookings} jobs={jobs} technicians={technicians} coverages={coverages} setPage={setPage} />}
+        {page === "technicianParts" && <TechnicianPartsPage technicians={technicians} technicianParts={technicianParts} inventory={inventory} onUpdated={loadAll} />}
+        {page === "technician" && <TechnicianPanel jobs={jobs} bookings={bookings} technicians={technicians} technicianParts={technicianParts} inventory={inventory} coverages={coverages} invoices={invoices}
             amcPlans={amcPlans}
-            products={products} onUpdated={loadAll} />}
+            products={products} businessSettings={businessSettings} onUpdated={loadAll} />}
         {page === "inventory" && <InventoryPage categories={categories} inventory={inventory} inventoryPurchases={inventoryPurchases} onUpdated={loadAll} />}
         {page === "plans" && <PlansPage categories={categories} inventory={inventory} amcPlans={amcPlans} products={products} onUpdated={loadAll} />}
         {page === "sale" && <AmcSalePage amcPlans={amcPlans} products={products} coverages={coverages} invoices={invoices} onUpdated={loadAll} />}
-        {page === "leads" && <LeadsPage leads={leads} onUpdated={loadAll} setPage={setPage} />}
+        {page === "leads" && <LeadsPage leads={leads} customers={customers} telecallers={telecallers} onUpdated={loadAll} setPage={setPage} onCreateBooking={(lead) => { setBookingDraft(lead); setPage("booking"); }} />}
         {page === "collections" && <CollectionsPage invoices={invoices} invoicePayments={invoicePayments} onUpdated={loadAll} />}
         {page === "reminders" && <ReminderCenter coverages={coverages} invoices={invoices} leads={leads} onUpdated={loadAll} />}
         {page === "reports" && <ReportsPage invoices={invoices} invoiceItems={invoiceItems} usage={usage} jobs={jobs} technicians={technicians} bookings={bookings} customers={customers} inventory={inventory} coverages={coverages} leads={leads} initialFilter={reportFilter} />}
-        {page === "customers" && <CustomerHistoryPage customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} coverages={coverages} leads={leads} />}
+        {page === "customers" && <CustomerHistoryPage mode="list" customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} onCustomerOpen={(mobile) => { setSelectedCustomerMobile(mobile); setPage("customerDetail"); }} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "" }); setPage("booking"); }} />}
+        {page === "customerHistory" && <CustomerHistoryPage mode="search" customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} onCustomerOpen={(mobile) => { setSelectedCustomerMobile(mobile); setPage("customerDetail"); }} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "" }); setPage("booking"); }} />}
+        {page === "customerDetail" && <CustomerHistoryPage mode="detail" initialMobile={selectedCustomerMobile} customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} onBack={() => setPage("customers")} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "" }); setPage("booking"); }} />}
         {page === "business" && <BusinessSettingsPage settings={businessSettings} language={language} setLanguage={setLanguage} onUpdated={loadAll} />}
         {page === "invoices" && <InvoicesPage invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} businessSettings={businessSettings} onUpdated={loadAll} />}
         {page === "settings" && <SettingsPage services={services} setPage={setPage} onUpdated={loadAll} />}
@@ -985,7 +1057,7 @@ function LoginScreen({ onAdminLogin, onTechnicianOpen, onTelecallerOpen }) {
 
 
 
-function TopBar({ title, onRefresh, loading, language, setLanguage, authUser, onLocalLogout, onBackup, onRestore }) {
+function TopBar({ title, onRefresh, loading, language, setLanguage, authUser, businessSettings, onLocalLogout, onBackup, onRestore }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   async function logout() {
@@ -1004,11 +1076,6 @@ function TopBar({ title, onRefresh, loading, language, setLanguage, authUser, on
         <span className="brand-icon">💧</span>
         <div>
           <strong>{title}</strong>
-          {authUser?.email && (
-            <small className="admin-email">
-              {authUser.email === "technician@aquabiz.local" ? "Technician Mode" : authUser.email === "telecaller@aquabiz.local" ? "Telecaller Mode" : authUser.email}
-            </small>
-          )}
         </div>
       </div>
 
@@ -1030,6 +1097,10 @@ function TopBar({ title, onRefresh, loading, language, setLanguage, authUser, on
 
             <button type="button" onClick={() => { onBackup?.(); setMenuOpen(false); }}>Backup</button>
 
+            <button type="button" onClick={() => { window.location.href = "mailto:contact@aquabiz.in"; setMenuOpen(false); }}>
+              Contact / Help
+            </button>
+
             <label className="dropdown-upload">
               Restore
               <input type="file" accept="application/json" hidden onChange={(e) => { onRestore?.(e); setMenuOpen(false); }} />
@@ -1042,6 +1113,12 @@ function TopBar({ title, onRefresh, loading, language, setLanguage, authUser, on
             {authUser?.email && (
               <button className="logout-menu-btn" type="button" onClick={logout}>Logout</button>
             )}
+
+            {authUser?.email && (
+              <small className="menu-login-email">
+                Login: {authUser.email}
+              </small>
+            )}
           </div>
         )}
       </div>
@@ -1049,8 +1126,9 @@ function TopBar({ title, onRefresh, loading, language, setLanguage, authUser, on
   );
 }
 
-function Dashboard({ stats, bookings, jobs, technicians, inventory, coverages, invoices, amcPlans, products, leads = [], dataErrors = [], onUpdated, setPage, setReportFilter, language }) {
+function Dashboard({ stats, bookings, jobs, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, businessSettings, leads = [], dataErrors = [], onUpdated, setPage, setReportFilter, language }) {
   const [invoiceJobId, setInvoiceJobId] = useState(null);
+  const [openBookingId, setOpenBookingId] = useState(null);
   const recent = bookings.slice(0, 5);
   const coverageReminders = coverages
     .filter((c) => c.next_service_due_date && String(c.next_service_due_date) <= todayISO() && isActive(c))
@@ -1081,14 +1159,18 @@ function Dashboard({ stats, bookings, jobs, technicians, inventory, coverages, i
 
       <section className="summary-strip">
         <button onClick={() => openReport("collection")}>
-          <span>{t.monthCollection} ({stats.month})</span>
+          <span>Current Month Collection ({stats.month})</span>
           <strong>{formatINR(stats.totalCollection)}</strong>
+        </button>
+        <button onClick={() => openReport("collection")}>
+          <span>Last Month Collection ({stats.lastMonth})</span>
+          <strong>{formatINR(stats.lastMonthCollection)}</strong>
         </button>
         <button onClick={() => setPage("collections")}>
           <span>{t.pending}</span>
           <strong>{formatINR(stats.pending)}</strong>
         </button>
-        <button onClick={() => openReport("customers")}>
+        <button onClick={() => setPage("customers")}>
           <span>{t.customers}</span>
           <strong>{stats.customers}</strong>
         </button>
@@ -1113,10 +1195,10 @@ function Dashboard({ stats, bookings, jobs, technicians, inventory, coverages, i
         <StatCard icon="L" label="Leads" value={leads.length} onClick={() => setPage("leads")} />
         <StatCard icon="📋" label={t.bookings} value={stats.totalBookings} onClick={() => openReport("bookings")} />
         <StatCard icon="J" label="Total Jobs" value={stats.totalJobs} onClick={() => setPage("jobs")} />
-        <StatCard icon="O" label="Open Jobs" value={stats.openJobs} onClick={() => setPage("jobs")} />
+        <StatCard icon="O" label="Open Jobs" value={stats.openJobs} onClick={() => setPage("openJobs")} />
         <StatCard icon="🔔" label={t.reminders} value={stats.remindersDue} onClick={() => setPage("reminders")} />
         <StatCard icon="⚠️" label={t.lowStock} value={stats.lowStock} onClick={() => openReport("low_stock")} />
-        <StatCard icon="👨‍🔧" label={t.completedJobs} value={stats.completedJobs} onClick={() => openReport("completed_jobs")} />
+        <StatCard icon="👨‍🔧" label={t.completedJobs} value={stats.completedJobs} onClick={() => setPage("completedJobs")} />
       </section>
 
       <section className="action-panel">
@@ -1132,11 +1214,15 @@ function Dashboard({ stats, bookings, jobs, technicians, inventory, coverages, i
           <button onClick={() => setPage("sale")}>{t.amcNewSale}</button>
           <button onClick={() => setPage("collections")}>Collections</button>
           <button onClick={() => setPage("reminders")}>Reminders</button>
+          <button onClick={() => setPage("openJobs")}>Open Jobs</button>
+          <button onClick={() => setPage("completedJobs")}>Completed Jobs</button>
           <button onClick={() => setPage("plans")}>{t.plansProducts}</button>
           <button onClick={() => setPage("inventory")}>{t.inventory}</button>
+          <button onClick={() => setPage("technicianParts")}>Technician Parts</button>
           <button onClick={() => setPage("reports")}>{t.reports}</button>
           <button onClick={() => setPage("business")}>{t.businessSettings}</button>
-          <button onClick={() => setPage("customers")}>{t.customerHistory}</button>
+          <button onClick={() => setPage("customers")}>Customers</button>
+          <button onClick={() => setPage("customerHistory")}>{t.customerHistory}</button>
           <button onClick={() => setPage("technician")}>{t.technicianApp}</button>
         </div>
       </section>
@@ -1190,17 +1276,26 @@ function Dashboard({ stats, bookings, jobs, technicians, inventory, coverages, i
             recent.map((b) => {
               const job = jobs.find((j) => String(j.booking_id) === String(b.id));
               const hasInvoice = invoices.some((i) => String(i.booking_id) === String(b.id));
+              const isOpen = String(openBookingId) === String(b.id);
               return (
                 <div className="premium-booking-card" key={b.id}>
-                  <div className="booking-card-head">
+                  <button
+                    className="booking-card-head compact-click"
+                    type="button"
+                    onClick={() => setOpenBookingId(isOpen ? null : b.id)}
+                  >
                     <div>
                       <strong>{b.customer_name}</strong>
-                      <p>{b.mobile}</p>
+                      <p>{isOpen ? "Hide details" : "Click to view details"}</p>
                     </div>
                     <span className={job ? "status assigned" : "status unassigned"}>
                       {job ? job.status : "Unassigned"}
                     </span>
-                  </div>
+                  </button>
+                  {isOpen && (
+                    <>
+                      <p>{b.mobile}</p>
+                      {b.address && <p className="muted">Address: {b.address}</p>}
                   <p>{b.service_type} • {formatINR(b.booking_amount)}</p>
                   {b.complaint_notes && <p className="muted">Notes: {b.complaint_notes}</p>}
                   <div className="row-actions">
@@ -1218,16 +1313,20 @@ function Dashboard({ stats, bookings, jobs, technicians, inventory, coverages, i
                       job={job}
                       booking={b}
                       inventory={inventory}
+                      technicianParts={technicianParts}
                       coverages={coverages}
                       invoices={invoices}
                       amcPlans={amcPlans}
                       products={products}
+                      businessSettings={businessSettings}
                       onClose={() => setInvoiceJobId(null)}
                       onDone={async () => {
                         setInvoiceJobId(null);
                         await onUpdated();
                       }}
                     />
+                  )}
+                    </>
                   )}
                 </div>
               );
@@ -1263,10 +1362,11 @@ function StatCard({ icon, label, value, onClick }) {
   return <div className="stat-card premium-stat">{content}</div>;
 }
 
-function NewBooking({ services, technicians, onDone }) {
+function NewBooking({ services, technicians, customers = [], initialLead = null, onDone }) {
   const [form, setForm] = useState(emptyBooking);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [matchedCustomer, setMatchedCustomer] = useState(null);
   const cleanServices = uniqueServices(services);
   const selectedService = cleanServices.find((s) => s.id === form.serviceId) || cleanServices[0];
   const serviceAmount = Number(selectedService?.price || 0);
@@ -1274,6 +1374,42 @@ function NewBooking({ services, technicians, onDone }) {
   useEffect(() => {
     if (!form.serviceId && cleanServices[0]?.id) setForm((prev) => ({ ...prev, serviceId: cleanServices[0].id }));
   }, [cleanServices, form.serviceId]);
+
+  useEffect(() => {
+    if (initialLead?.mobile) {
+      setForm((prev) => ({
+        ...prev,
+        name: initialLead.customer_name || prev.name,
+        mobile: initialLead.mobile || prev.mobile,
+        address: initialLead.address || prev.address,
+        priority: initialLead.priority || prev.priority,
+        complaintNotes: initialLead.notes || prev.complaintNotes,
+      }));
+    }
+  }, [initialLead]);
+
+  useEffect(() => {
+    const cleanMobile = String(form.mobile || "").replace(/\D/g, "");
+
+    if (cleanMobile.length < 10) {
+      setMatchedCustomer(null);
+      return;
+    }
+
+    const customer = customers.find((c) => String(c.mobile || "").replace(/\D/g, "") === cleanMobile);
+
+    if (!customer) {
+      setMatchedCustomer(null);
+      return;
+    }
+
+    setMatchedCustomer(customer);
+    setForm((prev) => ({
+      ...prev,
+      name: customer.name || prev.name,
+      address: customer.address || prev.address,
+    }));
+  }, [form.mobile, customers]);
 
   async function saveBooking() {
     setMessage("");
@@ -1304,6 +1440,10 @@ function NewBooking({ services, technicians, onDone }) {
       booking_amount: serviceAmount,
       address: form.address.trim(),
       complaint_notes: form.complaintNotes.trim(),
+      priority: form.priority || "Normal",
+      close_otp: generateOtp(),
+      close_otp_verified: false,
+      lead_id: initialLead?.id || null,
     }]).select().single();
 
     if (bookingError) { setMessage("Booking save error: " + bookingError.message); setSaving(false); return; }
@@ -1311,6 +1451,10 @@ function NewBooking({ services, technicians, onDone }) {
     if (form.technicianId) {
       const { error: jobError } = await saveJobAssignment(booking.id, form.technicianId);
       if (jobError) { setMessage("Booking saved, but technician assign error: " + jobError.message); setSaving(false); return; }
+    }
+
+    if (initialLead?.id) {
+      await supabase.from("leads").update({ status: "Converted" }).eq("id", initialLead.id);
     }
 
     setMessage("Booking saved successfully.");
@@ -1322,9 +1466,20 @@ function NewBooking({ services, technicians, onDone }) {
     <>
       <section className="page-head"><h2>New Booking</h2><p>Technician assignment is optional. You can assign later from the Jobs page.</p></section>
       <section className="form-stack">
+        <FormCard label="Mobile Number">
+          <input name="ro_customer_mobile_new" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} placeholder="Enter customer mobile number" inputMode="numeric" autoComplete="new-password" />
+          {matchedCustomer && <div className="success-box mt-sm">Existing customer found. Name and address auto-filled.</div>}
+        </FormCard>
         <FormCard label="Customer Name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Customer name" autoComplete="off" /></FormCard>
-        <FormCard label="Mobile Number"><input name="ro_customer_mobile_new" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} placeholder="Enter customer mobile number" inputMode="numeric" autoComplete="new-password" /></FormCard>
         <FormCard label="Service Type">{cleanServices.length === 0 ? <div className="error-box">No services found. Open More → Admin Settings and add service prices.</div> : <div className="chip-grid">{cleanServices.map((s) => <button key={s.id} className={form.serviceId === s.id ? "chip active" : "chip"} onClick={() => setForm({ ...form, serviceId: s.id })} type="button"><span>{s.name}</span><strong>{formatINR(s.price)}</strong></button>)}</div>}</FormCard>
+        <FormCard label="Priority">
+          <div className="chip-grid">
+            {["Normal", "Medium", "High", "Critical"].map((priority) => (
+              <button key={priority} className={form.priority === priority ? "chip active" : "chip"} type="button" onClick={() => setForm({ ...form, priority })}>{priority}</button>
+            ))}
+          </div>
+          <p className="helper">Normal priority auto-upgrades with each passing day until Critical.</p>
+        </FormCard>
         <FormCard label="Service Address"><textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="House no, street, area, city" rows={3} autoComplete="off" /></FormCard>
         <FormCard label="Final Service Amount"><div className="amount-box"><strong>{selectedService?.name || "Service"}</strong><strong>{formatINR(serviceAmount)}</strong></div></FormCard>
         <FormCard label="Technician Assignment Optional"><select value={form.technicianId} onChange={(e) => setForm({ ...form, technicianId: e.target.value })}><option value="">Skip now — assign later from Jobs page</option>{technicians.map((t) => <option value={t.id} key={t.id}>{t.name} ({t.mobile})</option>)}</select></FormCard>
@@ -1336,9 +1491,11 @@ function NewBooking({ services, technicians, onDone }) {
   );
 }
 
-function JobsPage({ bookings, jobs, technicians, inventory, coverages, invoices, amcPlans, products, onUpdated }) {
+function JobsPage({ bookings, jobs, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, businessSettings, onUpdated }) {
   const [selectedTech, setSelectedTech] = useState({});
   const [invoiceJobId, setInvoiceJobId] = useState(null);
+  const [openUnassignedId, setOpenUnassignedId] = useState(null);
+  const [openJobId, setOpenJobId] = useState(null);
   const assignedBookingIds = new Set(jobs.map((j) => String(j.booking_id)));
   const unassignedBookings = bookings.filter((b) => !assignedBookingIds.has(String(b.id)));
 
@@ -1350,8 +1507,18 @@ function JobsPage({ bookings, jobs, technicians, inventory, coverages, invoices,
     await onUpdated();
   }
 
-  async function updateStatus(jobId, status) {
-    const { error } = await supabase.from("job_assignments").update({ status }).eq("id", jobId);
+  async function updateStatus(job, status) {
+    const booking = bookings.find((b) => String(b.id) === String(job.booking_id));
+    if (status === "Completed" && booking?.close_otp) {
+      const entered = window.prompt("Enter customer OTP to close this job");
+      if (String(entered || "").trim() !== String(booking.close_otp)) {
+        alert("Wrong OTP. Job not closed.");
+        return;
+      }
+      await supabase.from("bookings").update({ close_otp_verified: true }).eq("id", booking.id);
+    }
+
+    const { error } = await supabase.from("job_assignments").update({ status }).eq("id", job.id);
     if (error) alert(error.message);
     await onUpdated();
   }
@@ -1362,15 +1529,44 @@ function JobsPage({ bookings, jobs, technicians, inventory, coverages, invoices,
 
       <section className="panel">
         <h3>Unassigned Bookings</h3>
-        {unassignedBookings.length === 0 ? <p className="muted">No unassigned bookings.</p> : unassignedBookings.map((b) => (
-          <div className="job-card" key={b.id}>
-            <BookingMini booking={b} />
-            <select value={selectedTech[b.id] || ""} onChange={(e) => setSelectedTech({ ...selectedTech, [b.id]: e.target.value })}>
-              <option value="">Select Technician</option>{technicians.map((t) => <option value={t.id} key={t.id}>{t.name} ({t.mobile})</option>)}
-            </select>
-            <button className="primary-btn" onClick={() => assignJob(b.id)}>Assign Technician</button>
-          </div>
-        ))}
+        {unassignedBookings.length === 0 ? <p className="muted">No unassigned bookings.</p> : unassignedBookings.map((b) => {
+          const isOpen = String(openUnassignedId) === String(b.id);
+          const coverageStatus = getCustomerCoverageStatus(b.mobile, coverages);
+
+          return (
+            <div className="job-card" key={b.id}>
+              <button
+                className="booking-card-head compact-click"
+                type="button"
+                onClick={() => setOpenUnassignedId(isOpen ? null : b.id)}
+              >
+                <div>
+                  <strong>{b.customer_name}</strong>
+                  <p>{isOpen ? "Hide details" : "Click to view details"}</p>
+                </div>
+                <div className="row-actions no-margin">
+                  <span className="status unassigned">Unassigned</span>
+                  <span className="status assigned">{coverageStatus}</span>
+                </div>
+              </button>
+
+              {isOpen && (
+                <>
+                  <BookingMini booking={b} />
+                  {b.close_otp && (
+                    <div className="row-actions">
+                      <a className="ghost-btn small" href={`https://wa.me/91${b.mobile}?text=${encodeURIComponent(`AquaBiz job closing OTP: ${b.close_otp}. Share this OTP after work is completed.`)}`} target="_blank" rel="noreferrer">Send Close OTP</a>
+                    </div>
+                  )}
+                  <select value={selectedTech[b.id] || ""} onChange={(e) => setSelectedTech({ ...selectedTech, [b.id]: e.target.value })}>
+                    <option value="">Select Technician</option>{technicians.map((t) => <option value={t.id} key={t.id}>{t.name} ({t.mobile})</option>)}
+                  </select>
+                  <button className="primary-btn" onClick={() => assignJob(b.id)}>Assign Technician</button>
+                </>
+              )}
+            </div>
+          );
+        })}
       </section>
 
       <section className="panel">
@@ -1379,20 +1575,43 @@ function JobsPage({ bookings, jobs, technicians, inventory, coverages, invoices,
           const booking = bookings.find((b) => String(b.id) === String(job.booking_id));
           const tech = technicians.find((t) => String(t.id) === String(job.technician_id));
           const hasInvoice = invoices.some((i) => String(i.booking_id) === String(job.booking_id));
+          const isOpen = String(openJobId) === String(job.id);
+          const coverageStatus = getCustomerCoverageStatus(booking?.mobile, coverages);
+
           return (
             <div className="job-card" key={job.id}>
-              {booking ? <BookingMini booking={booking} /> : <p className="muted">Booking not found</p>}
-              <p><strong>Technician:</strong> {tech?.name || "Unknown technician"}</p>
-              <p><strong>Status:</strong> {job.status}</p>
-              <div className="row-actions">
-                {["Assigned", "In Progress", "Completed"].map((s) => <button key={s} className="ghost-btn small" onClick={() => updateStatus(job.id, s)}>{s}</button>)}
-                {!hasInvoice && <button className="primary-btn small" onClick={() => setInvoiceJobId(invoiceJobId === job.id ? null : job.id)}>Generate Invoice</button>}
-                {hasInvoice && <span className="status assigned">Invoice Generated</span>}
-              </div>
-              {invoiceJobId === job.id && (
-                <InvoiceBuilder job={job} booking={booking} inventory={inventory} coverages={coverages} invoices={invoices}
-                  amcPlans={amcPlans}
-                  products={products} onClose={() => setInvoiceJobId(null)} onDone={async () => { setInvoiceJobId(null); await onUpdated(); }} />
+              <button
+                className="booking-card-head compact-click"
+                type="button"
+                onClick={() => setOpenJobId(isOpen ? null : job.id)}
+              >
+                <div>
+                  <strong>{booking?.customer_name || "Booking not found"}</strong>
+                  <p>{isOpen ? "Hide details" : `${tech?.name || "Unknown technician"} - ${job.status}`}</p>
+                </div>
+                <div className="row-actions no-margin">
+                  <span className="status assigned">{job.status}</span>
+                  <span className="status assigned">{coverageStatus}</span>
+                </div>
+              </button>
+
+              {isOpen && (
+                <>
+                  {booking ? <BookingMini booking={booking} /> : <p className="muted">Booking not found</p>}
+                  <p><strong>Technician:</strong> {tech?.name || "Unknown technician"}</p>
+                  <p><strong>Customer Type:</strong> {coverageStatus}</p>
+                  <div className="row-actions">
+                    {["Assigned", "In Progress", "Completed"].map((s) => <button key={s} className="ghost-btn small" onClick={() => updateStatus(job, s)}>{s}</button>)}
+                    {booking?.close_otp && <a className="ghost-btn small" href={`https://wa.me/91${booking.mobile}?text=${encodeURIComponent(`AquaBiz job closing OTP: ${booking.close_otp}. Share this OTP after work is completed.`)}`} target="_blank" rel="noreferrer">Send Close OTP</a>}
+                    {!hasInvoice && <button className="primary-btn small" onClick={() => setInvoiceJobId(invoiceJobId === job.id ? null : job.id)}>Generate Invoice</button>}
+                    {hasInvoice && <span className="status assigned">Invoice Generated</span>}
+                  </div>
+                  {invoiceJobId === job.id && (
+                    <InvoiceBuilder job={job} booking={booking} inventory={inventory} technicianParts={technicianParts} coverages={coverages} invoices={invoices}
+                      amcPlans={amcPlans}
+                      products={products} businessSettings={businessSettings} onClose={() => setInvoiceJobId(null)} onDone={async () => { setInvoiceJobId(null); await onUpdated(); }} />
+                  )}
+                </>
               )}
             </div>
           );
@@ -1402,11 +1621,194 @@ function JobsPage({ bookings, jobs, technicians, inventory, coverages, invoices,
   );
 }
 
+function JobListPage({ title, type, bookings, jobs, technicians, coverages, setPage }) {
+  const [search, setSearch] = useState("");
+  const [technicianId, setTechnicianId] = useState("");
+  const [priority, setPriority] = useState("");
+  const [customerType, setCustomerType] = useState("");
+  const [openId, setOpenId] = useState(null);
 
-function TelecallerPanel({ telecallers, leads, services, technicians, onUpdated }) {
+  const rows = jobs
+    .map((job) => {
+      const booking = bookings.find((b) => String(b.id) === String(job.booking_id));
+      const technician = technicians.find((t) => String(t.id) === String(job.technician_id));
+      const coverageStatus = getCustomerCoverageStatus(booking?.mobile, coverages);
+      const currentPriority = getBookingPriority(booking);
+      return { job, booking, technician, coverageStatus, currentPriority };
+    })
+    .filter((row) => row.booking);
+
+  const typeRows = rows.filter(({ job }) => (
+    type === "completed" ? isCompletedStatus(job.status) : !isCompletedStatus(job.status)
+  ));
+
+  const q = search.trim().toLowerCase();
+  const filtered = typeRows.filter(({ booking, technician, coverageStatus, currentPriority }) => {
+    const text = `${booking.customer_name || ""} ${booking.mobile || ""} ${booking.address || ""} ${booking.service_type || ""} ${technician?.name || ""}`.toLowerCase();
+    if (q && !text.includes(q)) return false;
+    if (technicianId && String(technician?.id) !== String(technicianId)) return false;
+    if (priority && currentPriority !== priority) return false;
+    if (customerType && coverageStatus !== customerType) return false;
+    return true;
+  });
+
+  return (
+    <>
+      <section className="page-head">
+        <h2>{title}</h2>
+        <p>Search and filter jobs by customer, technician, priority, and warranty/AMC status.</p>
+      </section>
+
+      <section className="panel">
+        <div className="form-stack">
+          <input placeholder="Search by customer, mobile, address, service, technician" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="two-col">
+            <select value={technicianId} onChange={(e) => setTechnicianId(e.target.value)}>
+              <option value="">All technicians</option>
+              {technicians.map((t) => <option value={t.id} key={t.id}>{t.name}</option>)}
+            </select>
+            <select value={priority} onChange={(e) => setPriority(e.target.value)}>
+              <option value="">All priorities</option>
+              {["Normal", "Medium", "High", "Critical"].map((p) => <option value={p} key={p}>{p}</option>)}
+            </select>
+          </div>
+          <select value={customerType} onChange={(e) => setCustomerType(e.target.value)}>
+            <option value="">All customer types</option>
+            {["Under AMC", "Under Warranty", "Out of Warranty", "New Customer", "Under Coverage"].map((value) => <option value={value} key={value}>{value}</option>)}
+          </select>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-head">
+          <div>
+            <h3>{title}</h3>
+            <p>{filtered.length} jobs found</p>
+          </div>
+          <button className="link-btn" onClick={() => setPage("jobs")}>Jobs & Assignment</button>
+        </div>
+
+        {filtered.length === 0 ? <p className="muted">No jobs found.</p> : filtered.map(({ job, booking, technician, coverageStatus, currentPriority }) => {
+          const isOpen = String(openId) === String(job.id);
+
+          return (
+            <div className="job-card" key={job.id}>
+              <button className="booking-card-head compact-click" type="button" onClick={() => setOpenId(isOpen ? null : job.id)}>
+                <div>
+                  <strong>{booking.customer_name}</strong>
+                  <p>{isOpen ? "Hide details" : `${booking.mobile} - ${booking.service_type}`}</p>
+                </div>
+                <div className="row-actions no-margin">
+                  <span className={currentPriority === "Critical" ? "status unassigned" : "status assigned"}>{currentPriority}</span>
+                  <span className="status assigned">{coverageStatus}</span>
+                </div>
+              </button>
+
+              {isOpen && (
+                <>
+                  <BookingMini booking={booking} />
+                  <p><strong>Technician:</strong> {technician?.name || "Not found"} {technician?.mobile ? `- ${technician.mobile}` : ""}</p>
+                  <p><strong>Status:</strong> {job.status}</p>
+                  <p><strong>Priority:</strong> {currentPriority}</p>
+                  <p><strong>Customer Type:</strong> {coverageStatus}</p>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </section>
+    </>
+  );
+}
+
+function TechnicianPartsPage({ technicians, technicianParts = [], inventory, onUpdated }) {
+  const [partForm, setPartForm] = useState(emptyTechnicianPart);
+  const [message, setMessage] = useState("");
+
+  async function assignTechnicianPart() {
+    setMessage("");
+
+    if (!partForm.technician_id || !partForm.inventory_item_id || Number(partForm.quantity || 0) <= 0) {
+      setMessage("Select technician, part and quantity.");
+      return;
+    }
+
+    const item = inventory.find((p) => String(p.id) === String(partForm.inventory_item_id));
+    const tech = technicians.find((t) => String(t.id) === String(partForm.technician_id));
+
+    const { error } = await supabase.from("technician_parts").insert([{
+      technician_id: partForm.technician_id,
+      technician_name: tech?.name || "",
+      inventory_item_id: partForm.inventory_item_id,
+      part_name: item?.name || "",
+      quantity: Number(partForm.quantity || 0),
+      notes: partForm.notes.trim(),
+    }]);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setPartForm(emptyTechnicianPart);
+    setMessage("Part assigned to technician.");
+    await onUpdated();
+  }
+
+  return (
+    <>
+      <section className="page-head">
+        <h2>Technician Parts</h2>
+        <p>Assign parts to technicians and track what stock is with each technician.</p>
+      </section>
+
+      <section className="panel">
+        <h3>Assign Part</h3>
+        <div className="form-stack">
+          <div className="two-col">
+            <select value={partForm.technician_id} onChange={(e) => setPartForm({ ...partForm, technician_id: e.target.value })}>
+              <option value="">Select Technician</option>
+              {technicians.map((t) => <option value={t.id} key={t.id}>{t.name} ({t.mobile})</option>)}
+            </select>
+            <select value={partForm.inventory_item_id} onChange={(e) => setPartForm({ ...partForm, inventory_item_id: e.target.value })}>
+              <option value="">Select Part</option>
+              {inventory.map((p) => <option value={p.id} key={p.id}>{p.name} - Stock {p.stock_qty}</option>)}
+            </select>
+          </div>
+          <div className="two-col">
+            <input type="number" placeholder="Quantity" value={partForm.quantity} onChange={(e) => setPartForm({ ...partForm, quantity: e.target.value })} />
+            <input placeholder="Notes" value={partForm.notes} onChange={(e) => setPartForm({ ...partForm, notes: e.target.value })} />
+          </div>
+          {message && <div className={message.includes("assigned") ? "success-box" : "error-box"}>{message}</div>}
+          <button className="primary-btn big" onClick={assignTechnicianPart}>Assign Part to Technician</button>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h3>Assigned Parts</h3>
+        {technicianParts.length === 0 ? <p className="muted">No technician parts assigned.</p> : technicianParts.map((row) => (
+          <div className="job-card" key={row.id}>
+            <div className="booking-card-head">
+              <div>
+                <strong>{row.technician_name}</strong>
+                <p>{row.part_name} x {row.quantity}</p>
+              </div>
+              <span className="status assigned">With Technician</span>
+            </div>
+            {row.notes && <p className="muted">Notes: {row.notes}</p>}
+          </div>
+        ))}
+      </section>
+    </>
+  );
+}
+
+
+function TelecallerPanel({ telecallers, leads, services, technicians, customers = [], onUpdated }) {
   const [login, setLogin] = useState({ mobile: "", pin: "" });
   const [loggedInTelecaller, setLoggedInTelecaller] = useState(null);
   const [tab, setTab] = useState("leads");
+  const [leadDraft, setLeadDraft] = useState(null);
   const [message, setMessage] = useState("");
 
   function handleLogin() {
@@ -1470,16 +1872,23 @@ function TelecallerPanel({ telecallers, leads, services, technicians, onUpdated 
       </section>
 
       {tab === "leads" ? (
-        <LeadsPage leads={leads} onUpdated={onUpdated} setPage={() => setTab("booking")} />
+        <LeadsPage
+          leads={leads.filter((lead) => !lead.assigned_telecaller_id || String(lead.assigned_telecaller_id) === String(loggedInTelecaller.id))}
+          customers={customers}
+          telecallers={telecallers}
+          onUpdated={onUpdated}
+          setPage={() => setTab("booking")}
+          onCreateBooking={(lead) => { setLeadDraft(lead); setTab("booking"); }}
+        />
       ) : (
-        <NewBooking services={services} technicians={technicians} onDone={onUpdated} />
+        <NewBooking services={services} technicians={technicians} customers={customers} initialLead={leadDraft} onDone={async () => { setLeadDraft(null); await onUpdated(); }} />
       )}
     </>
   );
 }
 
 
-function TechnicianPanel({ jobs, bookings, technicians, inventory, coverages, invoices, amcPlans, products, onUpdated }) {
+function TechnicianPanel({ jobs, bookings, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, businessSettings, onUpdated }) {
   const [login, setLogin] = useState({ mobile: "", pin: "" });
   const [loggedInTech, setLoggedInTech] = useState(null);
   const [invoiceJobId, setInvoiceJobId] = useState(null);
@@ -1487,6 +1896,9 @@ function TechnicianPanel({ jobs, bookings, technicians, inventory, coverages, in
 
   const filteredJobs = loggedInTech
     ? jobs.filter((job) => String(job.technician_id) === String(loggedInTech.id))
+    : [];
+  const myParts = loggedInTech
+    ? technicianParts.filter((row) => String(row.technician_id) === String(loggedInTech.id))
     : [];
 
   function handleLogin() {
@@ -1523,11 +1935,21 @@ function TechnicianPanel({ jobs, bookings, technicians, inventory, coverages, in
     setMessage("");
   }
 
-  async function updateStatus(jobId, status) {
+  async function updateStatus(job, status) {
+    const booking = bookings.find((b) => String(b.id) === String(job.booking_id));
+    if (status === "Completed" && booking?.close_otp) {
+      const entered = window.prompt("Enter customer OTP to close this job");
+      if (String(entered || "").trim() !== String(booking.close_otp)) {
+        alert("Wrong OTP. Job not closed.");
+        return;
+      }
+      await supabase.from("bookings").update({ close_otp_verified: true }).eq("id", booking.id);
+    }
+
     const { error } = await supabase
       .from("job_assignments")
       .update({ status })
-      .eq("id", jobId);
+      .eq("id", job.id);
 
     if (error) {
       alert(error.message);
@@ -1591,6 +2013,15 @@ function TechnicianPanel({ jobs, bookings, technicians, inventory, coverages, in
           <button className="ghost-btn small" onClick={logout}>Logout</button>
         </div>
 
+        {myParts.length > 0 && (
+          <div className="sub-panel">
+            <h3>Parts With Me</h3>
+            {myParts.map((row) => (
+              <div className="mini-line" key={row.id}>{row.part_name} x {row.quantity}</div>
+            ))}
+          </div>
+        )}
+
         {filteredJobs.length === 0 ? (
           <p className="muted">No jobs assigned to you.</p>
         ) : (
@@ -1622,14 +2053,14 @@ function TechnicianPanel({ jobs, bookings, technicians, inventory, coverages, in
 
                   <button
                     className="primary-btn small"
-                    onClick={() => updateStatus(job.id, "In Progress")}
+                    onClick={() => updateStatus(job, "In Progress")}
                   >
                     Start Job
                   </button>
 
                   <button
                     className="primary-btn small"
-                    onClick={() => updateStatus(job.id, "Completed")}
+                    onClick={() => updateStatus(job, "Completed")}
                   >
                     Mark Completed
                   </button>
@@ -1651,10 +2082,12 @@ function TechnicianPanel({ jobs, bookings, technicians, inventory, coverages, in
                     job={job}
                     booking={booking}
                     inventory={inventory}
+                    technicianParts={technicianParts}
                     coverages={coverages}
                     invoices={invoices}
                     amcPlans={amcPlans}
                     products={products}
+                    businessSettings={businessSettings}
                     onClose={() => setInvoiceJobId(null)}
                     onDone={async () => {
                       setInvoiceJobId(null);
@@ -1672,7 +2105,7 @@ function TechnicianPanel({ jobs, bookings, technicians, inventory, coverages, in
 }
 
 
-function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans = [], products = [], onClose, onDone }) {
+function InvoiceBuilder({ job, booking, inventory, technicianParts = [], coverages, invoices, amcPlans = [], products = [], businessSettings = {}, onClose, onDone }) {
   const [invoiceType, setInvoiceType] = useState("service");
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [selectedProductId, setSelectedProductId] = useState("");
@@ -1686,10 +2119,21 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
   const [emiMonths, setEmiMonths] = useState("6");
   const [emiStartDate, setEmiStartDate] = useState(todayISO());
   const [emiNotes, setEmiNotes] = useState("");
+  const [rentalDeposit, setRentalDeposit] = useState("0");
+  const [rentalMonthly, setRentalMonthly] = useState("0");
+  const [rentalStartDate, setRentalStartDate] = useState(todayISO());
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [showPaymentConfirm, setShowPaymentConfirm] = useState(false);
   const [message, setMessage] = useState("");
 
   const selectedPlan = amcPlans.find((p) => String(p.id) === String(selectedPlanId));
   const selectedProduct = products.find((p) => String(p.id) === String(selectedProductId));
+  const selectedPartItem = inventory.find((p) => String(p.id) === String(selectedPart));
+  const selectedTechnicianPartQty = selectedPartItem
+    ? technicianParts
+        .filter((row) => String(row.technician_id) === String(job?.technician_id) && String(row.inventory_item_id) === String(selectedPartItem.id))
+        .reduce((sum, row) => sum + Number(row.quantity || 0), 0)
+    : 0;
 
   const activeCoverage = coverages?.find((a) => String(a.mobile) === String(booking?.mobile) && isActive(a));
   const serviceCovered = invoiceType === "service" && activeCoverage && Number(activeCoverage.used_visits || 0) < Number(activeCoverage.free_visits || 0);
@@ -1699,9 +2143,10 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
 
   const planAmount = invoiceType === "amc" ? Number(selectedPlan?.price || 0) : 0;
   const productAmount = invoiceType === "new_sale" ? Number(selectedProduct?.price || 0) : 0;
+  const rentalAmount = invoiceType === "rental" ? Number(rentalDeposit || 0) + Number(rentalMonthly || 0) : 0;
   const partsTotal = parts.reduce((sum, p) => sum + Number(p.billing_price || 0) * Number(p.quantity || 0), 0);
   const discountAmount = Number(discount || 0);
-  const subtotal = serviceCharge + planAmount + productAmount + partsTotal;
+  const subtotal = serviceCharge + planAmount + productAmount + rentalAmount + partsTotal;
   const total = Math.max(subtotal - discountAmount, 0);
 
   const paidAmount = Number(cashAmount || 0) + Number(upiAmount || 0);
@@ -1722,10 +2167,24 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
         : Number(upiAmount || 0) > 0
           ? "upi"
           : "pending";
+  const upiAmountNumber = Number(upiAmount || 0);
+  const upiId = businessSettings?.upi_id || "";
+  const upiName = businessSettings?.upi_name || businessSettings?.business_name || "AquaBiz";
+  const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(upiName)}&am=${encodeURIComponent(upiAmountNumber.toFixed(2))}&cu=INR&tn=${encodeURIComponent("AquaBiz Invoice Payment")}`;
 
   function addPart() {
     const item = inventory.find((p) => String(p.id) === String(selectedPart));
     if (!item) return;
+
+    const requestedQty = Number(qty || 1);
+    const technicianQty = technicianParts
+      .filter((row) => String(row.technician_id) === String(job?.technician_id) && String(row.inventory_item_id) === String(item.id))
+      .reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+
+    if (job?.technician_id && technicianQty < requestedQty) {
+      setMessage(`${item.name} is not enough with this technician. Available with technician: ${technicianQty}.`);
+      return;
+    }
 
     const covered = invoiceType === "service" && activeCoverage && itemCoveredByRecord(item, activeCoverage);
     const selling = Number(item.selling_price || 0);
@@ -1736,7 +2195,7 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
         inventory_item_id: item.id,
         part_name: item.name,
         category: item.category_name,
-        quantity: Number(qty || 1),
+        quantity: requestedQty,
         actual_selling_price: selling,
         billing_price: covered ? 0 : selling,
         is_covered: !!covered,
@@ -1787,7 +2246,7 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
     return data;
   }
 
-  async function generateInvoice() {
+  async function generateInvoice(forceConfirmed = false) {
     setMessage("");
 
     if (!booking) return setMessage("Booking missing.");
@@ -1797,11 +2256,29 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
 
     if (invoiceType === "amc" && !selectedPlan) return setMessage("Please select an AMC plan.");
     if (invoiceType === "new_sale" && !selectedProduct) return setMessage("Please select an RO product.");
+    if (invoiceType === "new_sale" && paymentMode === "emi" && selectedProduct && paidAmount < Number(selectedProduct.min_down_payment || 0)) {
+      return setMessage("Down payment cannot be less than minimum down payment for this product.");
+    }
+    if (upiAmountNumber > 0 && !upiId) return setMessage("Please add UPI ID in Business Settings before accepting UPI payment.");
+    if (upiAmountNumber > 0 && !paymentConfirmed && !forceConfirmed) {
+      setShowPaymentConfirm(true);
+      return;
+    }
 
     for (const part of parts) {
       const inv = inventory.find((p) => String(p.id) === String(part.inventory_item_id));
       if (inv && Number(inv.stock_qty || 0) < Number(part.quantity || 0)) {
         return setMessage(`${part.part_name} stock not enough.`);
+      }
+
+      if (job?.technician_id) {
+        const technicianQty = technicianParts
+          .filter((row) => String(row.technician_id) === String(job.technician_id) && String(row.inventory_item_id) === String(part.inventory_item_id))
+          .reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+
+        if (technicianQty < Number(part.quantity || 0)) {
+          return setMessage(`${part.part_name} is not enough with this technician. Available with technician: ${technicianQty}.`);
+        }
       }
     }
 
@@ -1829,6 +2306,11 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
           upi_amount: Number(upiAmount || 0),
           paid_amount: paidAmount,
           due_amount: dueAmount,
+          payment_confirmed: upiAmountNumber > 0 ? true : false,
+          payment_confirmed_at: upiAmountNumber > 0 ? new Date().toISOString() : null,
+          payment_confirmed_by: upiAmountNumber > 0 ? "AquaBiz user" : "",
+          upi_qr_amount: upiAmountNumber,
+          upi_id: upiId,
           emi_total_amount: paymentMode === "emi" ? total : 0,
           emi_advance_amount: paymentMode === "emi" ? paidAmount : 0,
           emi_monthly_amount: paymentMode === "emi" ? monthlyEmi : 0,
@@ -1836,6 +2318,10 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
           emi_start_date: paymentMode === "emi" ? emiStartDate : null,
           emi_next_due_date: paymentMode === "emi" ? emiStartDate : null,
           emi_notes: paymentMode === "emi" ? emiNotes.trim() : "",
+          rental_security_deposit: invoiceType === "rental" ? Number(rentalDeposit || 0) : 0,
+          rental_monthly_rent: invoiceType === "rental" ? Number(rentalMonthly || 0) : 0,
+          rental_start_date: invoiceType === "rental" ? rentalStartDate : null,
+          rental_next_due_date: invoiceType === "rental" ? nextMonthlyDate(rentalStartDate) : null,
           coverage_id: activeCoverage?.id || null,
         },
       ])
@@ -1896,6 +2382,19 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
       });
     }
 
+    if (invoiceType === "rental") {
+      items.push({
+        invoice_id: invoice.id,
+        item_type: "rental",
+        item_name: "RO Rental",
+        quantity: 1,
+        actual_price: rentalAmount,
+        billing_price: rentalAmount,
+        is_covered: false,
+        covered_reason: "",
+      });
+    }
+
     const partItems = parts.map((p) => ({
       invoice_id: invoice.id,
       item_type: "part",
@@ -1930,6 +2429,24 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
             technician_id: job.technician_id,
           },
         ]);
+
+        if (job?.technician_id) {
+          let remainingQty = Number(part.quantity || 0);
+          const technicianRows = technicianParts
+            .filter((row) => String(row.technician_id) === String(job.technician_id) && String(row.inventory_item_id) === String(part.inventory_item_id))
+            .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+
+          for (const row of technicianRows) {
+            if (remainingQty <= 0) break;
+
+            const rowQty = Number(row.quantity || 0);
+            const deductQty = Math.min(rowQty, remainingQty);
+            const updatedQty = rowQty - deductQty;
+
+            await supabase.from("technician_parts").update({ quantity: updatedQty }).eq("id", row.id);
+            remainingQty -= deductQty;
+          }
+        }
       }
     }
 
@@ -1979,6 +2496,7 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
           <button className={invoiceType === "service" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("service")}>Service Invoice</button>
           <button className={invoiceType === "amc" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("amc")}>AMC Sale</button>
           <button className={invoiceType === "new_sale" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("new_sale")}>New RO Sale</button>
+          <button className={invoiceType === "rental" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("rental")}>RO Rental</button>
         </div>
       </FormCard>
 
@@ -2030,6 +2548,17 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
         </FormCard>
       )}
 
+      {invoiceType === "rental" && (
+        <FormCard label="RO Rental">
+          <div className="two-col">
+            <input type="number" placeholder="Security deposit" value={rentalDeposit} onChange={(e) => setRentalDeposit(e.target.value)} />
+            <input type="number" placeholder="Monthly rent" value={rentalMonthly} onChange={(e) => setRentalMonthly(e.target.value)} />
+          </div>
+          <input type="date" value={rentalStartDate} onChange={(e) => setRentalStartDate(e.target.value)} />
+          <div className="muted-box">Rent Reminder: {nextMonthlyDate(rentalStartDate)} | First Invoice: {formatINR(rentalAmount)}</div>
+        </FormCard>
+      )}
+
       {(invoiceType === "amc" || invoiceType === "new_sale") && (
         <FormCard label="Discount">
           <input
@@ -2054,6 +2583,11 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
           </select>
           <input type="number" value={qty} min="1" onChange={(e) => setQty(e.target.value)} />
         </div>
+        {selectedPartItem && job?.technician_id && (
+          <div className={selectedTechnicianPartQty >= Number(qty || 1) ? "success-box mt-sm" : "error-box mt-sm"}>
+            Technician stock available: {selectedTechnicianPartQty}
+          </div>
+        )}
         <button className="primary-btn" onClick={addPart}>Add Part</button>
       </FormCard>
 
@@ -2145,6 +2679,36 @@ function InvoiceBuilder({ job, booking, inventory, coverages, invoices, amcPlans
       </div>
 
       {message && <div className={message.includes("success") ? "success-box" : "error-box"}>{message}</div>}
+
+      {showPaymentConfirm && upiAmountNumber > 0 && (
+        <section className="payment-confirm-box">
+          <div className="panel-head">
+            <h3>Confirm UPI Payment</h3>
+            <button className="ghost-btn small" onClick={() => setShowPaymentConfirm(false)}>Close</button>
+          </div>
+          <div className="payment-summary">
+            <div><span>Customer</span><strong>{booking.customer_name}</strong></div>
+            <div><span>Invoice Total</span><strong>{formatINR(total)}</strong></div>
+            <div><span>Cash</span><strong>{formatINR(cashAmount)}</strong></div>
+            <div><span>UPI</span><strong>{formatINR(upiAmountNumber)}</strong></div>
+          </div>
+          <div className="qr-preview">
+            <QRCodeCanvas value={upiUri} size={180} />
+            <p>UPI ID: {upiId}</p>
+            <p>UPI Amount: {formatINR(upiAmountNumber)}</p>
+          </div>
+          <button
+            className="primary-btn big"
+            onClick={() => {
+              setPaymentConfirmed(true);
+              setShowPaymentConfirm(false);
+              generateInvoice(true);
+            }}
+          >
+            Payment Received
+          </button>
+        </section>
+      )}
 
       <button className="primary-btn big" onClick={generateInvoice}>Generate Final Invoice</button>
     </section>
@@ -2517,6 +3081,7 @@ function PlansPage({ categories, inventory, amcPlans, products, onUpdated }) {
     const { error } = await supabase.from("ro_products").insert([{
       name: product.name.trim(),
       price: Number(product.price || 0),
+      min_down_payment: Number(product.min_down_payment || 0),
       warranty_validity_days: Number(product.warranty_validity_days || 365),
       free_visits_enabled: !!product.free_visits_enabled,
       free_visits: product.free_visits_enabled ? Number(product.free_visits || 0) : 0,
@@ -2582,7 +3147,7 @@ function PlansPage({ categories, inventory, amcPlans, products, onUpdated }) {
         <h3>Saved RO Products</h3>
         {products.length === 0 ? <p className="muted">No RO products added.</p> : products.map((p) => (
           <div className="mini-line" key={p.id}>
-            {p.name} — {formatINR(p.price)} — {p.warranty_validity_days} days — {p.free_visits} visits — Reminder every {p.service_reminder_days} days
+            {p.name} - {formatINR(p.price)} - Min DP {formatINR(p.min_down_payment)} - {p.warranty_validity_days} days - {p.free_visits} visits - Reminder every {p.service_reminder_days} days
           </div>
         ))}
       </section>
@@ -2598,6 +3163,16 @@ function PlanFields({ data, setData, categories, inventory, toggleArray, type })
         <input placeholder="Price" type="number" value={data.price} onChange={(e) => setData({ ...data, price: e.target.value })} />
         <input placeholder="Validity days" type="number" value={type === "amc" ? data.validity_days : data.warranty_validity_days} onChange={(e) => type === "amc" ? setData({ ...data, validity_days: e.target.value }) : setData({ ...data, warranty_validity_days: e.target.value })} />
       </div>
+      {type === "product" && (
+        <FormCard label="Minimum Down Payment for EMI">
+          <input
+            placeholder="Example: 1999"
+            type="number"
+            value={data.min_down_payment}
+            onChange={(e) => setData({ ...data, min_down_payment: e.target.value })}
+          />
+        </FormCard>
+      )}
       <FormCard label="Free Service Visits">
         <div className="chip-grid">
           <button className={data.free_visits_enabled ? "chip active" : "chip"} type="button" onClick={() => setData({ ...data, free_visits_enabled: true })}>Yes</button>
@@ -2800,9 +3375,35 @@ function AmcSalePage({ amcPlans, products, coverages, invoices, onUpdated }) {
 }
 
 
-function LeadsPage({ leads, onUpdated, setPage }) {
+function LeadsPage({ leads, customers = [], telecallers = [], onUpdated, setPage, onCreateBooking }) {
   const [form, setForm] = useState(emptyLead);
+  const [leadAssign, setLeadAssign] = useState({});
+  const [followupDraft, setFollowupDraft] = useState({});
+  const [openLeadId, setOpenLeadId] = useState(null);
+  const [matchedCustomer, setMatchedCustomer] = useState(null);
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    const cleanMobile = String(form.mobile || "").replace(/\D/g, "");
+
+    if (cleanMobile.length < 10) {
+      setMatchedCustomer(null);
+      return;
+    }
+
+    const customer = customers.find((c) => String(c.mobile || "").replace(/\D/g, "") === cleanMobile);
+
+    if (!customer) {
+      setMatchedCustomer(null);
+      return;
+    }
+
+    setMatchedCustomer(customer);
+    setForm((prev) => ({
+      ...prev,
+      customer_name: customer.name || prev.customer_name,
+    }));
+  }, [form.mobile, customers]);
 
   async function saveLead() {
     setMessage("");
@@ -2811,12 +3412,16 @@ function LeadsPage({ leads, onUpdated, setPage }) {
       return;
     }
 
+    const selectedTelecaller = telecallers.find((t) => String(t.id) === String(form.assigned_telecaller_id));
+
     const { error } = await supabase.from("leads").insert([{
       customer_name: form.customer_name.trim(),
       mobile: form.mobile.trim(),
       source: form.source,
       interest: form.interest,
       status: form.status,
+      assigned_telecaller_id: form.assigned_telecaller_id || null,
+      assigned_telecaller_name: selectedTelecaller?.name || "",
       follow_up_date: form.follow_up_date || todayISO(),
       notes: form.notes.trim(),
     }]);
@@ -2837,6 +3442,59 @@ function LeadsPage({ leads, onUpdated, setPage }) {
     await onUpdated();
   }
 
+  async function assignTelecaller(lead, telecallerId) {
+    const telecaller = telecallers.find((t) => String(t.id) === String(telecallerId));
+    const { error } = await supabase
+      .from("leads")
+      .update({
+        assigned_telecaller_id: telecallerId || null,
+        assigned_telecaller_name: telecaller?.name || "",
+      })
+      .eq("id", lead.id);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    setLeadAssign({ ...leadAssign, [lead.id]: telecallerId || "" });
+    setMessage(telecallerId ? `Lead assigned to ${telecaller?.name}.` : "Lead assignment removed.");
+    await onUpdated();
+  }
+
+  async function saveLeadFollowup(lead) {
+    setMessage("");
+
+    const draft = followupDraft[lead.id] || {};
+    const nextDate = draft.date || lead.follow_up_date || todayISO();
+    const summary = String(draft.summary || "").trim();
+
+    if (!summary) {
+      setMessage("Follow-up summary is required.");
+      return;
+    }
+
+    const oldNotes = String(lead.notes || "").trim();
+    const newEntry = `[${todayISO()}] Next follow-up: ${nextDate} | ${summary}`;
+    const notes = oldNotes ? `${oldNotes}\n${newEntry}` : newEntry;
+
+    const { error } = await supabase
+      .from("leads")
+      .update({
+        follow_up_date: nextDate,
+        notes,
+        status: "Follow Up",
+      })
+      .eq("id", lead.id);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setFollowupDraft({ ...followupDraft, [lead.id]: { date: nextDate, summary: "" } });
+    setMessage("Follow-up saved.");
+    await onUpdated();
+  }
+
   return (
     <>
       <section className="page-head">
@@ -2848,9 +3506,14 @@ function LeadsPage({ leads, onUpdated, setPage }) {
         <h3>Add Lead</h3>
         <div className="form-stack">
           <div className="two-col">
-            <input placeholder="Customer name" value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} />
             <input placeholder="Mobile number" inputMode="numeric" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
+            <input placeholder="Customer name" value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} />
           </div>
+          {matchedCustomer && (
+            <div className="success-box">
+              Existing customer found: {matchedCustomer.name} {matchedCustomer.address ? `- ${matchedCustomer.address}` : ""}
+            </div>
+          )}
           <div className="two-col">
             <select value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
               <option>Manual</option>
@@ -2878,8 +3541,16 @@ function LeadsPage({ leads, onUpdated, setPage }) {
             </select>
             <input type="date" value={form.follow_up_date} onChange={(e) => setForm({ ...form, follow_up_date: e.target.value })} />
           </div>
+          <select value={form.assigned_telecaller_id} onChange={(e) => setForm({ ...form, assigned_telecaller_id: e.target.value })}>
+            <option value="">Assign telecaller later</option>
+            {telecallers.map((t) => <option value={t.id} key={t.id}>{t.name} ({t.mobile})</option>)}
+          </select>
           <input placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-          {message && <div className={message.includes("saved") ? "success-box" : "error-box"}>{message}</div>}
+          {message && (
+            <div className={message.includes("saved") || message.includes("assigned") || message.includes("removed") ? "success-box" : "error-box"}>
+              {message}
+            </div>
+          )}
           <button className="primary-btn big" onClick={saveLead}>Save Lead</button>
         </div>
       </section>
@@ -2892,26 +3563,81 @@ function LeadsPage({ leads, onUpdated, setPage }) {
           </div>
           <button className="link-btn" onClick={() => setPage("booking")}>New Booking</button>
         </div>
-        {leads.length === 0 ? <p className="muted">No leads added yet.</p> : leads.map((lead) => (
+        {leads.length === 0 ? <p className="muted">No leads added yet.</p> : leads.map((lead) => {
+          const isOpen = String(openLeadId) === String(lead.id);
+          const existingCustomer = customers.find((c) => String(c.mobile || "").replace(/\D/g, "") === String(lead.mobile || "").replace(/\D/g, ""));
+          return (
           <div className="job-card" key={lead.id}>
-            <div className="booking-card-head">
+            <button
+              className="booking-card-head compact-click"
+              type="button"
+              onClick={() => setOpenLeadId(isOpen ? null : lead.id)}
+            >
               <div>
                 <strong>{lead.customer_name}</strong>
-                <p>{lead.mobile} • {lead.source} • {lead.interest}</p>
+                <p>{isOpen ? "Hide details" : "Click to view details"}</p>
               </div>
-              <span className="status assigned">{lead.status}</span>
-            </div>
+              <div className="row-actions no-margin">
+                {existingCustomer && <span className="status assigned">Existing Customer</span>}
+                <span className="status assigned">{lead.status}</span>
+              </div>
+            </button>
+            {isOpen && (
+              <>
+            <p>{lead.mobile} - {lead.source} - {lead.interest}</p>
+            {existingCustomer && <p className="success-line">Existing customer: {existingCustomer.name} {existingCustomer.address ? `- ${existingCustomer.address}` : ""}</p>}
             <p>Follow up: {lead.follow_up_date || "Not set"}</p>
-            {lead.notes && <p className="muted">{lead.notes}</p>}
+            <p className="muted">Assigned: {lead.assigned_telecaller_name || "Not assigned"}</p>
+            {lead.notes && (
+              <div className="muted-box">
+                {String(lead.notes).split("\n").map((line, index) => <p key={index}>{line}</p>)}
+              </div>
+            )}
+            <FormCard label="Add Follow-up">
+              <div className="two-col">
+                <input
+                  type="date"
+                  value={followupDraft[lead.id]?.date || lead.follow_up_date || todayISO()}
+                  onChange={(e) => setFollowupDraft({
+                    ...followupDraft,
+                    [lead.id]: { ...(followupDraft[lead.id] || {}), date: e.target.value },
+                  })}
+                />
+                <input
+                  placeholder="Conversation summary"
+                  value={followupDraft[lead.id]?.summary || ""}
+                  onChange={(e) => setFollowupDraft({
+                    ...followupDraft,
+                    [lead.id]: { ...(followupDraft[lead.id] || {}), summary: e.target.value },
+                  })}
+                />
+              </div>
+              <button className="primary-btn mt-sm" onClick={() => saveLeadFollowup(lead)}>
+                Save Follow-up
+              </button>
+            </FormCard>
+            <div className="two-col mt-sm">
+              <select value={leadAssign[lead.id] ?? lead.assigned_telecaller_id ?? ""} onChange={(e) => setLeadAssign({ ...leadAssign, [lead.id]: e.target.value })}>
+                <option value="">Select telecaller</option>
+                {telecallers.map((t) => <option value={t.id} key={t.id}>{t.name} ({t.mobile})</option>)}
+              </select>
+              <button className="primary-btn" onClick={() => assignTelecaller(lead, leadAssign[lead.id] ?? lead.assigned_telecaller_id ?? "")}>
+                Assign Telecaller
+              </button>
+            </div>
             <div className="row-actions">
               {["Contacted", "Follow Up", "Converted", "Lost"].map((status) => (
                 <button className="ghost-btn small" key={status} onClick={() => updateLeadStatus(lead, status)}>{status}</button>
               ))}
+              <button className="primary-btn small" onClick={() => onCreateBooking?.(lead)}>Create Booking</button>
               <a className="ghost-btn small" href={`tel:${lead.mobile}`}>Call</a>
               <a className="ghost-btn small" href={`https://wa.me/91${lead.mobile}`} target="_blank" rel="noreferrer">WA</a>
             </div>
+              </>
+            )}
           </div>
-        ))}
+        );
+        })}
       </section>
     </>
   );
@@ -2967,6 +3693,21 @@ function ReminderCenter({ coverages, invoices, leads, onUpdated }) {
       raw: invoice,
     }));
 
+  const rentReminders = invoices
+    .filter((invoice) => invoice.invoice_type === "rental" && invoice.rental_next_due_date && String(invoice.rental_next_due_date) <= todayISO())
+    .map((invoice) => ({
+      id: `rent-${invoice.id}`,
+      source_id: invoice.id,
+      type: "rent",
+      label: "RO Rent Due",
+      customer_name: invoice.customer_name,
+      mobile: invoice.mobile,
+      due_date: invoice.rental_next_due_date,
+      amount: Number(invoice.rental_monthly_rent || 0),
+      note: "Monthly rental collection",
+      raw: invoice,
+    }));
+
   const leadReminders = leads
     .filter((lead) => lead.follow_up_date && String(lead.follow_up_date) <= todayISO() && !["Converted", "Lost"].includes(lead.status))
     .map((lead) => ({
@@ -2982,7 +3723,7 @@ function ReminderCenter({ coverages, invoices, leads, onUpdated }) {
       raw: lead,
     }));
 
-  const reminders = [...serviceReminders, ...emiReminders, ...paymentFollowUps, ...leadReminders]
+  const reminders = [...serviceReminders, ...emiReminders, ...rentReminders, ...paymentFollowUps, ...leadReminders]
     .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
 
   async function markDone(reminder) {
@@ -3006,6 +3747,11 @@ function ReminderCenter({ coverages, invoices, leads, onUpdated }) {
       response = await supabase
         .from("invoices")
         .update({ collection_follow_up_date: addDays(todayISO(), 3) })
+        .eq("id", reminder.source_id);
+    } else if (reminder.type === "rent") {
+      response = await supabase
+        .from("invoices")
+        .update({ rental_next_due_date: nextMonthlyDate(reminder.due_date || todayISO()) })
         .eq("id", reminder.source_id);
     } else {
       response = await supabase
@@ -3034,6 +3780,8 @@ function ReminderCenter({ coverages, invoices, leads, onUpdated }) {
       response = await supabase.from("invoices").update({ emi_next_due_date: reschedule.date }).eq("id", reschedule.source_id);
     } else if (reschedule.type === "payment") {
       response = await supabase.from("invoices").update({ collection_follow_up_date: reschedule.date, collection_note: reschedule.note || "" }).eq("id", reschedule.source_id);
+    } else if (reschedule.type === "rent") {
+      response = await supabase.from("invoices").update({ rental_next_due_date: reschedule.date }).eq("id", reschedule.source_id);
     } else {
       response = await supabase.from("leads").update({ follow_up_date: reschedule.date, notes: reschedule.note || reschedule.raw?.notes || "" }).eq("id", reschedule.source_id);
     }
@@ -3065,6 +3813,7 @@ function ReminderCenter({ coverages, invoices, leads, onUpdated }) {
       <section className="cards-grid">
         <StatCard icon="S" label="Service Due" value={serviceReminders.length} />
         <StatCard icon="E" label="EMI Due" value={emiReminders.length} />
+        <StatCard icon="R" label="Rent Due" value={rentReminders.length} />
         <StatCard icon="P" label="Payment Follow-up" value={paymentFollowUps.length} />
         <StatCard icon="L" label="Lead Follow-up" value={leadReminders.length} />
       </section>
@@ -3577,6 +4326,178 @@ function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], businessSe
     const total = Number(inv.total_amount || 0);
     const g = gstBreakup(total);
     const invoiceNo = getInvoiceNumber(inv, index);
+    const logoUrl = business.logo_url || business.business_logo_url || "";
+    const upiAmount = Number(inv.upi_qr_amount || inv.upi_amount || 0);
+    const invoiceUpiId = inv.upi_id || business.upi_id || "";
+    const upiName = business.upi_name || business.business_name || "AquaBiz";
+    const upiUri = `upi://pay?pa=${encodeURIComponent(invoiceUpiId)}&pn=${encodeURIComponent(upiName)}&am=${encodeURIComponent(upiAmount.toFixed(2))}&cu=INR&tn=${encodeURIComponent("AquaBiz Invoice Payment")}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=190x190&data=${encodeURIComponent(upiUri)}`;
+    const hasBankDetails = business.bank_name || business.account_holder_name || business.account_number || business.ifsc_code || business.branch_name;
+    const premiumItemRows = items.map((item, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${item.item_name || ""}</td>
+        <td>${item.quantity || 1}</td>
+        <td>₹${Number(item.actual_price || 0).toLocaleString("en-IN")}</td>
+        <td>₹${Number(item.billing_price || 0).toLocaleString("en-IN")}</td>
+        <td>${item.is_covered ? "Covered" : "Chargeable"}</td>
+      </tr>
+    `).join("");
+    const premiumGstRows = business.gst_enabled ? `
+      <tr><td>Taxable Value</td><td>₹${g.taxable.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td></tr>
+      <tr><td>CGST ${(g.rate / 2).toFixed(1)}%</td><td>₹${g.cgst.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td></tr>
+      <tr><td>SGST ${(g.rate / 2).toFixed(1)}%</td><td>₹${g.sgst.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td></tr>
+    ` : "";
+    const qrBlock = upiAmount > 0 ? `
+      <div class="qr-card">
+        <div class="section-title">UPI Payment QR</div>
+        <div class="qr-layout">
+          <img class="qr-img" src="${qrUrl}" alt="UPI QR Code" />
+          <div>
+            <div><strong>UPI ID:</strong> ${invoiceUpiId}</div>
+            <div><strong>UPI Amount:</strong> ₹${upiAmount.toLocaleString("en-IN")}</div>
+            <div><strong>Status:</strong> ${inv.payment_status || ""}</div>
+          </div>
+        </div>
+      </div>
+    ` : "";
+    const bankBlock = hasBankDetails ? `
+      <div class="box avoid-break">
+        <div class="section-title">Bank Account Details</div>
+        ${business.bank_name ? `<div><strong>Bank:</strong> ${business.bank_name}</div>` : ""}
+        ${business.account_holder_name ? `<div><strong>Account Holder:</strong> ${business.account_holder_name}</div>` : ""}
+        ${business.account_number ? `<div><strong>Account No:</strong> ${business.account_number}</div>` : ""}
+        ${business.ifsc_code ? `<div><strong>IFSC:</strong> ${business.ifsc_code}</div>` : ""}
+        ${business.branch_name ? `<div><strong>Branch:</strong> ${business.branch_name}</div>` : ""}
+      </div>
+    ` : "";
+    const premiumHtml = `
+      <html>
+        <head>
+          <title>${business.business_name || "AquaBiz"} Invoice</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { margin: 0; background: #eef3f8; font-family: Arial, sans-serif; color: #111827; }
+            .screen-bar { max-width: 920px; margin: 18px auto 0; text-align: right; }
+            .print-btn { border: 0; background: #008a73; color: white; padding: 10px 16px; border-radius: 8px; font-weight: 700; }
+            .invoice-wrap { max-width: 920px; margin: 18px auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 18px 50px rgba(0,0,0,.08); }
+            .top-band { height: 8px; background: linear-gradient(90deg, #000666, #008a73); border-radius: 8px; margin-bottom: 22px; }
+            .header { display: grid; grid-template-columns: 1.3fr .7fr; gap: 22px; padding-bottom: 18px; border-bottom: 1px solid #d7d7e8; }
+            .brand-line { display: flex; gap: 14px; align-items: flex-start; }
+            .logo { width: 74px; height: 74px; object-fit: contain; border: 1px solid #d7d7e8; border-radius: 10px; padding: 6px; }
+            .text-logo { width: 74px; height: 74px; border-radius: 10px; background: #e9e9ff; color: #000666; display:flex; align-items:center; justify-content:center; font-weight: 900; font-size: 24px; }
+            h1 { color:#000666; margin:0 0 8px; font-size: 30px; }
+            .muted { color:#6b7280; font-size: 13px; line-height: 1.55; }
+            .invoice-title { text-align:right; }
+            .invoice-title h2 { margin: 0 0 10px; color:#000666; font-size: 28px; text-transform: uppercase; }
+            .status-pill { display: inline-block; margin-top: 8px; padding: 7px 12px; border-radius: 999px; background: #e9f8f5; color: #008a73; font-weight: 800; }
+            .grid { display:grid; grid-template-columns: 1fr 1fr; gap:18px; margin-top:20px; }
+            .box, .qr-card { border:1px solid #d7d7e8; padding:16px; border-radius:10px; line-height:1.65; background:#fff; margin-bottom: 12px; }
+            .section-title { color:#000666; font-weight:900; margin-bottom:8px; text-transform: uppercase; font-size: 12px; letter-spacing: .04em; }
+            table { width:100%; border-collapse:collapse; margin-top:20px; overflow: hidden; border-radius: 8px; }
+            th, td { border:1px solid #d7d7e8; padding:10px; text-align:left; font-size: 13px; }
+            th { background:#f2f4ff; color:#000666; }
+            .summary-grid { display:grid; grid-template-columns: 1fr 360px; gap:18px; margin-top:20px; align-items:start; }
+            .summary table { margin-top: 0; }
+            .total td { font-size:18px; font-weight:bold; color:#008a73; background:#f2fffb; }
+            .qr-layout { display:grid; grid-template-columns: 120px 1fr; gap:14px; align-items:center; }
+            .qr-img { width: 120px; height: 120px; image-rendering: pixelated; }
+            .terms { margin-top:20px; border-top:1px solid #d7d7e8; padding-top:14px; color:#374151; line-height:1.6; }
+            .signature { display:grid; grid-template-columns: 1fr 220px; gap:20px; margin-top:34px; align-items:end; }
+            .sign-line { border-top:1px solid #111827; text-align:center; padding-top:8px; color:#374151; }
+            .footer { margin-top:20px; color:#6b7280; font-size:12px; text-align:center; }
+            .avoid-break { break-inside: avoid; page-break-inside: avoid; }
+            @media (max-width: 700px) {
+              .invoice-wrap { margin: 0; border-radius: 0; padding: 18px; }
+              .header, .grid, .summary-grid, .signature { grid-template-columns: 1fr; }
+              .invoice-title { text-align: left; }
+              table { display:block; overflow-x:auto; white-space:nowrap; }
+            }
+            @media print {
+              @page { size: A4; margin: 12mm; }
+              body { background: #fff; }
+              .screen-bar { display: none; }
+              .invoice-wrap { max-width: 100%; margin: 0; padding: 0; box-shadow: none; border-radius: 0; }
+              .box, .qr-card { border-color: #bbb; }
+              th { background: #f2f2f2 !important; color:#000 !important; }
+              h1, .invoice-title h2, .section-title { color:#000 !important; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="screen-bar"><button class="print-btn" onclick="window.print()">Print Invoice</button></div>
+          <div class="invoice-wrap">
+            <div class="top-band"></div>
+            <div class="header">
+              <div class="brand-line">
+                ${logoUrl ? `<img class="logo" src="${logoUrl}" alt="Business Logo" />` : `<div class="text-logo">AB</div>`}
+                <div>
+                  <h1>${business.business_name || "AquaBiz"}</h1>
+                  <div class="muted">${business.address || ""}</div>
+                  <div class="muted">Phone: ${business.phone || ""} ${business.whatsapp ? "| WhatsApp: " + business.whatsapp : ""}</div>
+                  <div class="muted">Email: ${business.email || ""}</div>
+                  ${business.gst_enabled ? `<div class="muted"><strong>GSTIN:</strong> ${business.gst_number || ""}</div>` : ""}
+                </div>
+              </div>
+              <div class="invoice-title">
+                <h2>Invoice</h2>
+                <div><strong>No:</strong> ${invoiceNo}</div>
+                <div><strong>Date:</strong> ${new Date(inv.created_at).toLocaleDateString("en-IN")}</div>
+                <div class="status-pill">${inv.payment_status || ""}</div>
+              </div>
+            </div>
+            <div class="grid">
+              <div class="box">
+                <div class="section-title">Customer Details</div>
+                <div><strong>Name:</strong> ${inv.customer_name || ""}</div>
+                <div><strong>Mobile:</strong> ${inv.mobile || ""}</div>
+              </div>
+              <div class="box">
+                <div class="section-title">Invoice Details</div>
+                <div><strong>Type:</strong> ${inv.invoice_type || "service"}</div>
+                <div><strong>Payment:</strong> ${inv.payment_method || ""}</div>
+                <div><strong>Cash:</strong> ₹${Number(inv.cash_amount || 0).toLocaleString("en-IN")} | <strong>UPI:</strong> ₹${Number(inv.upi_amount || 0).toLocaleString("en-IN")}</div>
+              </div>
+            </div>
+            <table>
+              <thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Actual Price</th><th>Billing Price</th><th>Status</th></tr></thead>
+              <tbody>${premiumItemRows}</tbody>
+            </table>
+            <div class="summary-grid avoid-break">
+              <div>${qrBlock}${bankBlock}</div>
+              <div class="summary">
+                <table>
+                  <tr><td>Service Charge</td><td>₹${Number(inv.service_charge || 0).toLocaleString("en-IN")}</td></tr>
+                  <tr><td>Parts Charge</td><td>₹${Number(inv.parts_charge || 0).toLocaleString("en-IN")}</td></tr>
+                  <tr><td>Discount</td><td>₹${Number(inv.discount || 0).toLocaleString("en-IN")}</td></tr>
+                  ${premiumGstRows}
+                  <tr><td>Cash Amount</td><td>₹${Number(inv.cash_amount || 0).toLocaleString("en-IN")}</td></tr>
+                  <tr><td>UPI Amount</td><td>₹${Number(inv.upi_amount || 0).toLocaleString("en-IN")}</td></tr>
+                  <tr class="total"><td>Total</td><td>₹${Number(inv.total_amount || 0).toLocaleString("en-IN")}</td></tr>
+                  <tr><td>Paid</td><td>₹${Number(inv.paid_amount || 0).toLocaleString("en-IN")}</td></tr>
+                  <tr><td>Pending</td><td>₹${Number(inv.due_amount || 0).toLocaleString("en-IN")}</td></tr>
+                </table>
+              </div>
+            </div>
+            <div class="terms avoid-break">
+              <div class="section-title">Terms & Conditions</div>
+              <div>${business.terms || "Thank you for your business."}</div>
+            </div>
+            <div class="signature avoid-break">
+              <div class="muted">Thank you for choosing ${business.business_name || "AquaBiz"}.</div>
+              <div class="sign-line">Authorized Signature</div>
+            </div>
+            <div class="footer">Generated by AquaBiz</div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const premiumWindow = window.open("", "_blank");
+    premiumWindow.document.open();
+    premiumWindow.document.write(premiumHtml);
+    premiumWindow.document.close();
+    return;
 
     const itemRows = items.map((item, i) => `
       <tr>
@@ -4078,6 +4999,15 @@ function BusinessSettingsPage({ settings, language, setLanguage, onUpdated }) {
     phone: settings?.phone || "",
     whatsapp: settings?.whatsapp || "",
     email: settings?.email || "",
+    business_logo_url: settings?.business_logo_url || "",
+    logo_url: settings?.logo_url || settings?.business_logo_url || "",
+    upi_id: settings?.upi_id || "",
+    upi_name: settings?.upi_name || "",
+    bank_name: settings?.bank_name || "",
+    account_holder_name: settings?.account_holder_name || "",
+    account_number: settings?.account_number || "",
+    ifsc_code: settings?.ifsc_code || "",
+    branch_name: settings?.branch_name || "",
     address: settings?.address || "",
     google_business_link: settings?.google_business_link || "",
     instagram_link: settings?.instagram_link || "",
@@ -4097,6 +5027,15 @@ function BusinessSettingsPage({ settings, language, setLanguage, onUpdated }) {
         phone: settings.phone || "",
         whatsapp: settings.whatsapp || "",
         email: settings.email || "",
+        business_logo_url: settings.business_logo_url || "",
+        logo_url: settings.logo_url || settings.business_logo_url || "",
+        upi_id: settings.upi_id || "",
+        upi_name: settings.upi_name || "",
+        bank_name: settings.bank_name || "",
+        account_holder_name: settings.account_holder_name || "",
+        account_number: settings.account_number || "",
+        ifsc_code: settings.ifsc_code || "",
+        branch_name: settings.branch_name || "",
         address: settings.address || "",
         google_business_link: settings.google_business_link || "",
         instagram_link: settings.instagram_link || "",
@@ -4119,6 +5058,15 @@ function BusinessSettingsPage({ settings, language, setLanguage, onUpdated }) {
       phone: form.phone,
       whatsapp: form.whatsapp,
       email: form.email,
+      business_logo_url: form.business_logo_url,
+      logo_url: form.logo_url,
+      upi_id: form.upi_id,
+      upi_name: form.upi_name,
+      bank_name: form.bank_name,
+      account_holder_name: form.account_holder_name,
+      account_number: form.account_number,
+      ifsc_code: form.ifsc_code,
+      branch_name: form.branch_name,
       address: form.address,
       google_business_link: form.google_business_link,
       instagram_link: form.instagram_link,
@@ -4142,6 +5090,34 @@ function BusinessSettingsPage({ settings, language, setLanguage, onUpdated }) {
     setLanguage(form.app_language);
     setMessage("Business settings saved.");
     await onUpdated();
+  }
+
+  async function uploadLogo(file) {
+    setMessage("");
+    if (!file) return;
+
+    const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      setMessage("Logo must be JPG, PNG, or WEBP.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setMessage("Logo size must be less than 2MB.");
+      return;
+    }
+
+    const ext = file.name.split(".").pop();
+    const path = `business-logos/default-${Date.now()}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from("business-assets").upload(path, file, { upsert: true });
+
+    if (uploadError) {
+      setMessage(uploadError.message);
+      return;
+    }
+
+    const { data } = supabase.storage.from("business-assets").getPublicUrl(path);
+    setForm({ ...form, logo_url: data.publicUrl, business_logo_url: data.publicUrl });
+    setMessage("Logo uploaded successfully. Click Save Business Settings.");
   }
 
   return (
@@ -4170,9 +5146,50 @@ function BusinessSettingsPage({ settings, language, setLanguage, onUpdated }) {
             <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </FormCard>
 
+          <FormCard label="Upload Business Logo">
+            {form.logo_url && <img className="logo-preview" src={form.logo_url} alt="Business logo preview" />}
+            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => uploadLogo(e.target.files?.[0])} />
+            <p className="helper">JPG, PNG, or WEBP only. Max size 2MB. Logo will be used on invoices.</p>
+          </FormCard>
+
           <FormCard label="Business Address">
             <textarea rows={3} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
           </FormCard>
+
+          <section className="sub-panel">
+            <h3>UPI Payment Details</h3>
+            <div className="two-col">
+              <FormCard label="UPI ID">
+                <input placeholder="example@upi" value={form.upi_id} onChange={(e) => setForm({ ...form, upi_id: e.target.value })} />
+              </FormCard>
+              <FormCard label="UPI Name / Payee Name">
+                <input placeholder="Business or owner name" value={form.upi_name} onChange={(e) => setForm({ ...form, upi_name: e.target.value })} />
+              </FormCard>
+            </div>
+          </section>
+
+          <section className="sub-panel">
+            <h3>Bank Account Details</h3>
+            <div className="two-col">
+              <FormCard label="Bank Name">
+                <input value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} />
+              </FormCard>
+              <FormCard label="Account Holder Name">
+                <input value={form.account_holder_name} onChange={(e) => setForm({ ...form, account_holder_name: e.target.value })} />
+              </FormCard>
+            </div>
+            <div className="two-col">
+              <FormCard label="Account Number">
+                <input value={form.account_number} onChange={(e) => setForm({ ...form, account_number: e.target.value })} />
+              </FormCard>
+              <FormCard label="IFSC Code">
+                <input value={form.ifsc_code} onChange={(e) => setForm({ ...form, ifsc_code: e.target.value.toUpperCase() })} />
+              </FormCard>
+            </div>
+            <FormCard label="Branch Name">
+              <input value={form.branch_name} onChange={(e) => setForm({ ...form, branch_name: e.target.value })} />
+            </FormCard>
+          </section>
 
           <div className="two-col">
             <FormCard label="GST Number">
@@ -4225,9 +5242,15 @@ function BusinessSettingsPage({ settings, language, setLanguage, onUpdated }) {
   );
 }
 
-function CustomerHistoryPage({ customers, bookings, jobs = [], technicians = [], invoices, invoiceItems, invoicePayments = [], coverages, leads = [] }) {
+function CustomerHistoryPage({ mode = "search", initialMobile = "", customers, bookings, jobs = [], technicians = [], invoices, invoiceItems, invoicePayments = [], usage = [], coverages, leads = [], onCustomerOpen, onBack, onCreateBooking }) {
   const [search, setSearch] = useState("");
-  const [selectedMobile, setSelectedMobile] = useState("");
+  const [selectedMobile, setSelectedMobile] = useState(initialMobile || "");
+  const isListMode = mode === "list";
+  const isDetailMode = mode === "detail";
+
+  useEffect(() => {
+    if (initialMobile) setSelectedMobile(initialMobile);
+  }, [initialMobile]);
 
   const searchText = search.trim().toLowerCase();
   const filtered = searchText ? customers.filter((c) => {
@@ -4237,14 +5260,17 @@ function CustomerHistoryPage({ customers, bookings, jobs = [], technicians = [],
       String(c.mobile || "").toLowerCase().includes(q) ||
       String(c.address || "").toLowerCase().includes(q)
     );
-  }) : [];
+  }) : isListMode ? customers : [];
 
-  const selectedCustomer = customers.find((c) => String(c.mobile) === String(selectedMobile));
-  const customerBookings = selectedMobile ? bookings.filter((b) => String(b.mobile) === String(selectedMobile)) : [];
-  const customerInvoices = selectedMobile ? invoices.filter((i) => String(i.mobile) === String(selectedMobile)) : [];
-  const customerCoverages = selectedMobile ? coverages.filter((c) => String(c.mobile) === String(selectedMobile)) : [];
-  const customerLeads = selectedMobile ? leads.filter((l) => String(l.mobile) === String(selectedMobile)) : [];
-  const customerPayments = selectedMobile ? invoicePayments.filter((p) => String(p.mobile) === String(selectedMobile)) : [];
+  const selectedMobileKey = normalizeMobile(selectedMobile);
+  const selectedCustomer = customers.find((c) => normalizeMobile(c.mobile) === selectedMobileKey);
+  const customerBookings = selectedMobileKey ? bookings.filter((b) => normalizeMobile(b.mobile) === selectedMobileKey) : [];
+  const customerInvoices = selectedMobileKey ? invoices.filter((i) => normalizeMobile(i.mobile) === selectedMobileKey) : [];
+  const customerCoverages = selectedMobileKey ? coverages.filter((c) => normalizeMobile(c.mobile) === selectedMobileKey) : [];
+  const customerLeads = selectedMobileKey ? leads.filter((l) => normalizeMobile(l.mobile) === selectedMobileKey) : [];
+  const customerPayments = selectedMobileKey ? invoicePayments.filter((p) => normalizeMobile(p.mobile) === selectedMobileKey) : [];
+  const customerInvoiceIds = new Set(customerInvoices.map((invoice) => String(invoice.id)));
+  const customerUsage = selectedMobile ? usage.filter((row) => customerInvoiceIds.has(String(row.invoice_id))) : [];
   const customerJobs = customerBookings
     .map((booking) => {
       const job = jobs.find((j) => String(j.booking_id) === String(booking.id));
@@ -4263,7 +5289,7 @@ function CustomerHistoryPage({ customers, bookings, jobs = [], technicians = [],
   const latestPayment = customerPayments[0];
 
   function customerWhatsAppLink() {
-    const mobile = String(selectedMobile || "").replace(/\D/g, "");
+    const mobile = normalizeMobile(selectedMobile);
     const text = encodeURIComponent(`Namaste ${selectedCustomer?.name || ""}, AquaBiz se baat kar rahe hain.`);
     return mobile ? `https://wa.me/91${mobile}?text=${text}` : `https://wa.me/?text=${text}`;
   }
@@ -4271,24 +5297,29 @@ function CustomerHistoryPage({ customers, bookings, jobs = [], technicians = [],
   return (
     <>
       <section className="page-head">
-        <h2>Customer History</h2>
-        <p>View service, AMC/Warranty, invoice, and payment history for a customer.</p>
+        <h2>{isDetailMode ? "Customer Details" : isListMode ? "Customers" : "Customer History"}</h2>
+        <p>{isDetailMode ? "Complete customer profile, jobs, invoices, installed parts, and lead history." : isListMode ? "Search and open any customer profile." : "Search by mobile number, name, or address to view complete customer history."}</p>
       </section>
 
-      <section className="panel">
+      {!isDetailMode && <section className="panel">
         <input
-          placeholder="Search customer by name, mobile, or address"
+          placeholder={isListMode ? "Search customers by name, mobile, or address" : "Search customer by mobile number"}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
 
-        {searchText && (
+        {(isListMode || searchText) && (
           <div className="customer-list">
-            {filtered.length === 0 ? <p className="muted">No customer found.</p> : filtered.slice(0, 8).map((c) => (
+            {filtered.length === 0 ? <p className="muted">No customer found.</p> : (isListMode ? filtered : filtered.slice(0, 8)).map((c) => (
               <button
                 key={c.id}
-                className={selectedMobile === c.mobile ? "customer-chip active" : "customer-chip"}
-                onClick={() => setSelectedMobile(c.mobile)}
+                type="button"
+                className={selectedMobileKey === normalizeMobile(c.mobile) ? "customer-chip active" : "customer-chip"}
+                onClick={() => {
+                  const mobile = normalizeMobile(c.mobile);
+                  setSelectedMobile(mobile);
+                  onCustomerOpen?.(mobile);
+                }}
               >
                 <strong>{c.name}</strong>
                 <span>{c.mobile}</span>
@@ -4296,11 +5327,11 @@ function CustomerHistoryPage({ customers, bookings, jobs = [], technicians = [],
             ))}
           </div>
         )}
-      </section>
+      </section>}
 
       {!selectedCustomer ? (
         <section className="panel">
-          <p className="muted">Select a customer.</p>
+          <p className="muted">{isListMode ? "Select a customer from the list." : "Search mobile number and select a customer."}</p>
         </section>
       ) : (
         <>
@@ -4323,6 +5354,8 @@ function CustomerHistoryPage({ customers, bookings, jobs = [], technicians = [],
                 <p>{selectedCustomer.address}</p>
               </div>
               <div className="row-actions">
+                {isDetailMode && <button className="ghost-btn small" onClick={onBack}>Back</button>}
+                <button className="primary-btn small" onClick={() => onCreateBooking?.(selectedCustomer)}>New Booking / Ticket</button>
                 <a className="ghost-btn small" href={`tel:${selectedCustomer.mobile}`}>Call</a>
                 <a className="ghost-btn small" href={customerWhatsAppLink()} target="_blank" rel="noreferrer">WhatsApp</a>
               </div>
@@ -4370,6 +5403,36 @@ function CustomerHistoryPage({ customers, bookings, jobs = [], technicians = [],
                 <BookingMini booking={b} />
               </div>
             ))}
+          </section>
+
+          <section className="panel">
+            <h3>Installed Parts / Service Parts</h3>
+            {customerUsage.length === 0 ? <p className="muted">No installed parts found.</p> : customerUsage.map((row) => {
+              const invoice = customerInvoices.find((inv) => String(inv.id) === String(row.invoice_id));
+              const booking = customerBookings.find((b) => String(b.id) === String(row.booking_id || invoice?.booking_id));
+              const job = jobs.find((j) => String(j.booking_id) === String(booking?.id));
+              const technician = technicians.find((t) => String(t.id) === String(row.technician_id || job?.technician_id));
+              const installedDate = invoice?.invoice_date || row.created_at || booking?.created_at;
+
+              return (
+                <div className="job-card" key={row.id}>
+                  <div className="booking-card-head">
+                    <div>
+                      <strong>{row.part_name}</strong>
+                      <p>Qty {row.quantity} | Invoice {invoice?.invoice_number || invoice?.id || "Not found"}</p>
+                    </div>
+                    <span className={row.is_covered ? "status assigned" : "status unassigned"}>
+                      {row.is_covered ? "Covered" : "Paid"}
+                    </span>
+                  </div>
+                  <p>Date: {installedDate ? new Date(installedDate).toLocaleDateString("en-IN") : "Not set"}</p>
+                  <p>Technician: {technician?.name || "Not found"} {technician?.mobile ? `- ${technician.mobile}` : ""}</p>
+                  <p>Billing: {formatINR(row.billing_price)} | Actual: {formatINR(row.actual_selling_price)}</p>
+                  {row.covered_reason && <p className="success-line">{row.covered_reason}</p>}
+                  {booking?.address && <p className="muted">Address: {booking.address}</p>}
+                </div>
+              );
+            })}
           </section>
 
           <section className="panel">
@@ -4641,6 +5704,7 @@ function SettingsPage({ services, setPage, onUpdated }) {
           <button onClick={() => setPage("business")}>Business Settings</button>
           <button onClick={() => setPage("plans")}>Plans / Products</button>
           <button onClick={() => setPage("inventory")}>Inventory</button>
+          <button onClick={() => setPage("technicianParts")}>Technician Parts</button>
           <button onClick={() => setPage("reports")}>Reports</button>
         </div>
       </section>
