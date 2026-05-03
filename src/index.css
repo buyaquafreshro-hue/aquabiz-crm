@@ -279,7 +279,7 @@ button {
 
 .auth-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 
@@ -291,6 +291,15 @@ button {
   color: var(--primary);
   border-radius: 14px;
   padding: 12px;
+  font-weight: 900;
+}
+
+.danger-btn {
+  border: 1px solid rgba(185, 28, 28, .24);
+  background: #fff5f5;
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 12px 16px;
   font-weight: 900;
 }
 
@@ -380,7 +389,8 @@ select:focus {
 }
 
 .primary-btn.small,
-.ghost-btn.small {
+.ghost-btn.small,
+.danger-btn.small {
   padding: 9px 12px;
   border-radius: 12px;
   font-size: 13px;
@@ -585,6 +595,36 @@ select:focus {
   font-weight: 800;
 }
 
+.tracking-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.tracking-map,
+.leaflet-map {
+  min-height: 360px;
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tracking-side {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.tech-location-pin span {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #0f766e;
+  border: 3px solid #ffffff;
+  box-shadow: 0 6px 16px rgba(15, 118, 110, .35);
+}
+
 .stat-top {
   display: flex;
   justify-content: space-between;
@@ -770,6 +810,102 @@ select:focus {
   min-width: 130px;
 }
 
+.settings-accordion {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  margin-top: 12px;
+  overflow: hidden;
+}
+
+.settings-accordion summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  cursor: pointer;
+  color: var(--primary);
+  font-weight: 900;
+  list-style: none;
+}
+
+.settings-accordion summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-accordion summary::after {
+  content: "+";
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--primary);
+}
+
+.settings-accordion[open] summary::after {
+  content: "-";
+}
+
+.settings-accordion summary strong {
+  margin-left: auto;
+  min-width: 28px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.accordion-body {
+  border-top: 1px solid var(--border);
+  padding: 14px;
+}
+
+.edit-row {
+  align-items: start;
+  gap: 14px;
+}
+
+.edit-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+  margin-bottom: 12px;
+}
+
+.edit-card-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.settings-toast {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 90px;
+  z-index: 120;
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-weight: 900;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, .18);
+}
+
+.settings-toast.success {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid rgba(4, 120, 87, .2);
+}
+
+.settings-toast.error {
+  background: #fff5f5;
+  color: var(--danger);
+  border: 1px solid rgba(185, 28, 28, .2);
+}
+
 .sub-panel {
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -845,7 +981,7 @@ select:focus {
 
   .premium-grid,
   .cards-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
   }
 
   .premium-hero {
@@ -863,6 +999,10 @@ select:focus {
 
   .dashboard-columns {
     grid-template-columns: .9fr 1.1fr;
+  }
+
+  .tracking-layout {
+    grid-template-columns: minmax(0, 1.5fr) minmax(280px, .7fr);
   }
 
   .payment-summary {
