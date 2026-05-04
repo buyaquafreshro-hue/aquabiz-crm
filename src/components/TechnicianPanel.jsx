@@ -4,6 +4,7 @@ import { BookingMini } from "./shared";
 import { supabase } from "../supabaseClient";
 import { formatINR } from "../utils/appUtils";
 import { calculateTechnicianStats, isOpenJobStatus } from "../utils/roleDashboard";
+import { buildWhatsAppUrl, customerGreetingMessage } from "../utils/whatsappUtils";
 export function TechnicianPanel({ jobs, bookings, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, businessSettings, onUpdated }) {
   const [login, setLogin] = useState({ mobile: "", pin: "" });
   const [loggedInTech, setLoggedInTech] = useState(null);
@@ -244,7 +245,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
 
                   <a
                     className="ghost-btn small"
-                    href={`https://wa.me/91${booking?.mobile || ""}`}
+                    href={buildWhatsAppUrl(booking?.mobile, customerGreetingMessage(booking?.customer_name, businessSettings?.business_name))}
                     target="_blank"
                     rel="noreferrer"
                   >

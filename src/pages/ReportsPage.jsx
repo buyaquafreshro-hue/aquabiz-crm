@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { BookingMini, StatCard } from "../components/shared";
 import { formatINR, getDueAmount, getLocalMonthKey, getPaidAmount, getRecordMonthKey, isActive, isCompletedStatus, todayISO } from "../utils/appUtils";
+import { buildWhatsAppUrl, reminderMessage } from "../utils/whatsappUtils";
 export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technicians = [], bookings = [], customers = [], inventory = [], coverages = [], leads = [], initialFilter = "all" }) {
   const [month, setMonth] = useState(getLocalMonthKey());
   const [filter, setFilter] = useState(initialFilter || "all");
@@ -236,7 +237,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
               </div>
               <div className="row-actions">
                 <a className="ghost-btn small" href={`tel:${r.mobile}`}>Call</a>
-                <a className="ghost-btn small" href={`https://wa.me/91${r.mobile}`} target="_blank" rel="noreferrer">WA</a>
+                <a className="ghost-btn small" href={buildWhatsAppUrl(r.mobile, reminderMessage({ ...r, label: "Service Reminder", due_date: r.next_service_due_date }))} target="_blank" rel="noreferrer">WA</a>
               </div>
             </div>
           ))}

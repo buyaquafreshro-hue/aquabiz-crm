@@ -3,6 +3,7 @@ import { InvoiceBuilder } from "../components/InvoiceBuilder";
 import { StatCard } from "../components/shared";
 import { getText } from "../constants/text";
 import { formatINR, isActive, todayISO } from "../utils/appUtils";
+import { buildWhatsAppUrl, reminderMessage } from "../utils/whatsappUtils";
 export function Dashboard({ stats, bookings, jobs, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, leads = [], dataErrors = [], onUpdated, setPage, setReportFilter, language }) {
   const [invoiceJobId, setInvoiceJobId] = useState(null);
   const [openBookingId, setOpenBookingId] = useState(null);
@@ -127,7 +128,7 @@ export function Dashboard({ stats, bookings, jobs, technicians, technicianParts 
                 </div>
                 <div className="row-actions">
                   <a className="ghost-btn small" href={`tel:${r.mobile}`}>Call</a>
-                  <a className="ghost-btn small" href={`https://wa.me/91${r.mobile}`} target="_blank" rel="noreferrer">WA</a>
+                  <a className="ghost-btn small" href={buildWhatsAppUrl(r.mobile, reminderMessage({ ...r, label: r.reminder_type }, businessSettings))} target="_blank" rel="noreferrer">WA</a>
                 </div>
               </div>
             ))

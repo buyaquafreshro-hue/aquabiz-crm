@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { InvoicePaymentForm } from "./CollectionsPage";
 import { formatINR, todayISO } from "../utils/appUtils";
+import { buildWhatsAppUrl } from "../utils/whatsappUtils";
 export function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], businessSettings, onUpdated }) {
   const [paymentInvoiceId, setPaymentInvoiceId] = useState(null);
   const business = businessSettings || {
@@ -80,10 +81,7 @@ export function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], bus
   }
 
   function shareWhatsApp(inv, items, index) {
-    const text = encodeURIComponent(invoiceText(inv, items, index));
-    const mobile = String(inv.mobile || "").replace(/\D/g, "");
-    const url = mobile ? `https://wa.me/91${mobile}?text=${text}` : `https://wa.me/?text=${text}`;
-    window.open(url, "_blank");
+    window.open(buildWhatsAppUrl(inv.mobile, invoiceText(inv, items, index)), "_blank");
   }
 
   function printInvoice(inv, items, index) {

@@ -3,6 +3,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { InvoicePaymentForm } from "./CollectionsPage";
 import { supabase } from "../supabaseClient";
 import { formatINR, getDueAmount, getLocalMonthKey, nextMonthlyDate, todayISO } from "../utils/appUtils";
+import { buildWhatsAppUrl, emiReceiptMessage, emiReminderMessage } from "../utils/whatsappUtils";
 
 function dateKey(value) {
   return String(value || "").slice(0, 10);
@@ -67,12 +68,8 @@ function buildSchedule(invoice, invoicePayments) {
   });
 }
 
-function whatsappLink(invoice) {
-  const mobile = String(invoice.mobile || "").replace(/\D/g, "");
-  const amount = formatINR(getEmiAmount(invoice));
-  const dueDate = invoice.emi_next_due_date || "today";
-  const text = encodeURIComponent(`Namaste ${invoice.customer_name || ""}, AquaBiz EMI reminder. EMI Amount: ${amount}. Due Date: ${dueDate}.`);
-  return mobile ? `https://wa.me/91${mobile}?text=${text}` : `https://wa.me/?text=${text}`;
+function whatsappLink(invoice, businessSettings) {
+  return buildWhatsAppUrl(invoice.mobile, emiReminderMessage(invoice, businessSettings));
 }
 
 function buildEmiUpiUri(invoice, businessSettings) {
@@ -90,11 +87,8 @@ function buildEmiUpiUri(invoice, businessSettings) {
   return `upi://pay?${params.toString()}`;
 }
 
-function receiptWhatsappLink(invoice, payment) {
-  const mobile = String(invoice.mobile || "").replace(/\D/g, "");
-  const amount = Number(payment.cash_amount || 0) + Number(payment.upi_amount || 0);
-  const text = encodeURIComponent(`Namaste ${invoice.customer_name || ""}, AquaBiz EMI payment receipt. Received: ${formatINR(amount)} on ${payment.payment_date || dateKey(payment.created_at) || todayISO()}. Thank you.`);
-  return mobile ? `https://wa.me/91${mobile}?text=${text}` : `https://wa.me/?text=${text}`;
+function receiptWhatsappLink(invoice, payment, businessSettings) {
+  return buildWhatsAppUrl(invoice.mobile, emiReceiptMessage(invoice, payment, businessSettings));
 }
 
 function printEmiReceipt(invoice, payment, businessSettings) {
@@ -283,7 +277,7 @@ export function EmiManagementPage({ invoices = [], invoicePayments = [], busines
                     <div className="table-actions">
                       <button className="link-btn" onClick={() => setSelectedInvoiceId(row.invoice.id)}>View Schedule</button>
                       {row.dueAmount > 0 && <button className="primary-btn small" onClick={() => setPaymentInvoiceId(paymentInvoiceId === row.invoice.id ? "" : row.invoice.id)}>Add EMI</button>}
-                      {row.dueAmount > 0 && <a className="ghost-btn small" href={whatsappLink(row.invoice)} target="_blank" rel="noreferrer">WhatsApp</a>}
+                      {row.dueAmount > 0 && <a className="ghost-btn small" href={whatsappLink(row.invoice, businessSettings)} target="_blank" rel="noreferrer">WhatsApp</a>}
                     </div>
                   </td>
                 </tr>
@@ -345,7 +339,7 @@ export function EmiManagementPage({ invoices = [], invoicePayments = [], busines
               {selected.dueAmount > 0 && (
                 <div className="row-actions">
                   <button className="primary-btn small" onClick={() => setPaymentInvoiceId(selected.invoice.id)}>Record EMI Payment</button>
-                  <a className="ghost-btn small" href={whatsappLink(selected.invoice)} target="_blank" rel="noreferrer">Send Reminder</a>
+                  <a className="ghost-btn small" href={whatsappLink(selected.invoice, businessSettings)} target="_blank" rel="noreferrer">Send Reminder</a>
                 </div>
               )}
             </div>
@@ -393,7 +387,7 @@ export function EmiManagementPage({ invoices = [], invoicePayments = [], busines
                   <p>Cash {formatINR(payment.cash_amount)} | UPI {formatINR(payment.upi_amount)} {payment.note ? `| ${payment.note}` : ""}</p>
                 </div>
                 <button className="primary-btn small" onClick={() => printEmiReceipt(selected.invoice, payment, businessSettings)}>Print Receipt</button>
-                <a className="ghost-btn small" href={receiptWhatsappLink(selected.invoice, payment)} target="_blank" rel="noreferrer">WhatsApp Receipt</a>
+                <a className="ghost-btn small" href={receiptWhatsappLink(selected.invoice, payment, businessSettings)} target="_blank" rel="noreferrer">WhatsApp Receipt</a>
               </div>
             ))}
           </section>

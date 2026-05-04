@@ -3,6 +3,7 @@ import { emptyPayment } from "../constants/defaults";
 import { StatCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
 import { formatINR, getDueAmount, getPaidAmount, nextMonthlyDate, todayISO } from "../utils/appUtils";
+import { buildWhatsAppUrl, paymentReminderMessage } from "../utils/whatsappUtils";
 export function InvoicePaymentForm({ invoice, onClose, onDone }) {
   const [form, setForm] = useState(emptyPayment);
   const [message, setMessage] = useState("");
@@ -125,7 +126,7 @@ export function InvoicePaymentForm({ invoice, onClose, onDone }) {
 }
 
 
-export function CollectionsPage({ invoices, invoicePayments = [], onUpdated }) {
+export function CollectionsPage({ invoices, invoicePayments = [], businessSettings = {}, onUpdated }) {
   const [paymentInvoiceId, setPaymentInvoiceId] = useState(null);
   const [followUpInvoiceId, setFollowUpInvoiceId] = useState(null);
   const [followUpForm, setFollowUpForm] = useState({ date: todayISO(), note: "" });
@@ -169,11 +170,7 @@ export function CollectionsPage({ invoices, invoicePayments = [], onUpdated }) {
   }
 
   function whatsAppLink(invoice) {
-    const mobile = String(invoice.mobile || "").replace(/\D/g, "");
-    const text = encodeURIComponent(
-      `Namaste ${invoice.customer_name || ""}, AquaBiz payment reminder. Pending amount: ${formatINR(getDueAmount(invoice))}.`
-    );
-    return mobile ? `https://wa.me/91${mobile}?text=${text}` : `https://wa.me/?text=${text}`;
+    return buildWhatsAppUrl(invoice.mobile, paymentReminderMessage(invoice, businessSettings));
   }
 
   return (

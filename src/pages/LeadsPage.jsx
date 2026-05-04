@@ -3,6 +3,7 @@ import { emptyLead } from "../constants/defaults";
 import { FormCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
 import { todayISO } from "../utils/appUtils";
+import { buildWhatsAppUrl, customerGreetingMessage } from "../utils/whatsappUtils";
 export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTelecaller = null, onUpdated, setPage, onCreateBooking }) {
   const [form, setForm] = useState({ ...emptyLead, address: "", area: "", service_need: "" });
   const [showLeadForm, setShowLeadForm] = useState(!loggedInTelecaller);
@@ -320,7 +321,7 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
               ))}
               <button className="primary-btn small" onClick={() => onCreateBooking?.(lead)}>Create Booking</button>
               <a className="ghost-btn small" href={`tel:${lead.mobile}`}>Call</a>
-              <a className="ghost-btn small" href={`https://wa.me/91${lead.mobile}`} target="_blank" rel="noreferrer">WA</a>
+              <a className="ghost-btn small" href={buildWhatsAppUrl(lead.mobile, customerGreetingMessage(lead.customer_name))} target="_blank" rel="noreferrer">WA</a>
             </div>
               </>
             )}

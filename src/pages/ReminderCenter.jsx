@@ -2,7 +2,8 @@ import { useState } from "react";
 import { StatCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
 import { addDays, formatINR, getDueAmount, isActive, nextMonthlyDate, todayISO } from "../utils/appUtils";
-export function ReminderCenter({ coverages, invoices, leads, onUpdated }) {
+import { buildWhatsAppUrl, reminderMessage } from "../utils/whatsappUtils";
+export function ReminderCenter({ coverages, invoices, leads, businessSettings = {}, onUpdated }) {
   const [reschedule, setReschedule] = useState(null);
   const [message, setMessage] = useState("");
 
@@ -155,10 +156,7 @@ export function ReminderCenter({ coverages, invoices, leads, onUpdated }) {
   }
 
   function whatsAppLink(reminder) {
-    const mobile = String(reminder.mobile || "").replace(/\D/g, "");
-    const amountText = reminder.amount ? ` Amount: ${formatINR(reminder.amount)}.` : "";
-    const text = encodeURIComponent(`Namaste ${reminder.customer_name || ""}, AquaBiz reminder: ${reminder.label} due on ${reminder.due_date}.${amountText}`);
-    return mobile ? `https://wa.me/91${mobile}?text=${text}` : `https://wa.me/?text=${text}`;
+    return buildWhatsAppUrl(reminder.mobile, reminderMessage(reminder, businessSettings));
   }
 
   return (

@@ -5,6 +5,7 @@ import { saveJobAssignment } from "../services/jobAssignments";
 import { supabase } from "../supabaseClient";
 import { formatINR, getBookingPriority, getCustomerCoverageStatus } from "../utils/appUtils";
 import { getCompletionTime, isOpenJobStatus, isRecentCompletedJob } from "../utils/roleDashboard";
+import { buildWhatsAppUrl, closeOtpMessage } from "../utils/whatsappUtils";
 
 function priorityClass(priority) {
   return priority === "Critical" || priority === "High" ? "urgent" : "";
@@ -150,7 +151,7 @@ export function JobsPage({ bookings, jobs, technicians, technicianParts = [], in
                 <section className="dispatch-detail">
                   <BookingMini booking={booking} />
                   {booking.close_otp && (
-                    <a className="ghost-btn small" href={`https://wa.me/91${booking.mobile}?text=${encodeURIComponent(`AquaBiz job closing OTP: ${booking.close_otp}. Share this OTP after work is completed.`)}`} target="_blank" rel="noreferrer">Send Close OTP</a>
+                    <a className="ghost-btn small" href={buildWhatsAppUrl(booking.mobile, closeOtpMessage(booking, businessSettings))} target="_blank" rel="noreferrer">Send Close OTP</a>
                   )}
 
                   {job && (

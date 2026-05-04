@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { BookingMini, StatCard } from "../components/shared";
 import { coverageLabel, formatINR, getDueAmount, getPaidAmount, isActive, isCompletedStatus, normalizeMobile, todayISO } from "../utils/appUtils";
+import { buildWhatsAppUrl, customerGreetingMessage, invoiceShareMessage } from "../utils/whatsappUtils";
 export function CustomerHistoryPage({ mode = "search", initialMobile = "", customers, bookings, jobs = [], technicians = [], invoices, invoiceItems, invoicePayments = [], usage = [], coverages, leads = [], businessSettings, onCustomerOpen, onBack, onCreateBooking }) {
   const [search, setSearch] = useState("");
   const [selectedMobile, setSelectedMobile] = useState(initialMobile || "");
@@ -132,9 +133,7 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
   }
 
   function customerWhatsAppLink() {
-    const mobile = normalizeMobile(selectedMobile);
-    const text = encodeURIComponent(`Namaste ${selectedCustomer?.name || ""}, AquaBiz se baat kar rahe hain.`);
-    return mobile ? `https://wa.me/91${mobile}?text=${text}` : `https://wa.me/?text=${text}`;
+    return buildWhatsAppUrl(selectedMobile, customerGreetingMessage(selectedCustomer?.name, businessSettings?.business_name));
   }
 
   function getInvoiceNumber(invoice, index = 0) {
@@ -143,33 +142,11 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
   }
 
   function invoiceShareText(invoice, items, index) {
-    const lines = [
-      `${businessSettings?.business_name || "AquaBiz"} Invoice`,
-      `Invoice No: ${getInvoiceNumber(invoice, index)}`,
-      `Customer: ${invoice.customer_name || selectedCustomer?.name || ""}`,
-      `Mobile: ${invoice.mobile || selectedCustomer?.mobile || ""}`,
-      `Type: ${invoice.invoice_type || "service"}`,
-      `Total: ${formatINR(invoice.total_amount)}`,
-      `Paid: ${formatINR(getPaidAmount(invoice))}`,
-      `Pending: ${formatINR(getDueAmount(invoice))}`,
-      `Status: ${invoice.payment_status || ""}`,
-    ];
-
-    if (items.length > 0) {
-      lines.push("", "Items:");
-      items.forEach((item) => lines.push(`${item.item_name} x ${item.quantity || 1} - ${formatINR(item.billing_price)}`));
-    }
-
-    if (businessSettings?.upi_id && getDueAmount(invoice) > 0) lines.push("", `UPI ID: ${businessSettings.upi_id}`);
-    if (businessSettings?.business_phone || businessSettings?.phone) lines.push(`Phone: ${businessSettings.business_phone || businessSettings.phone}`);
-    lines.push("Thank you.");
-    return lines.join("\n");
+    return invoiceShareMessage(invoice, items, businessSettings, getInvoiceNumber(invoice, index));
   }
 
   function shareInvoiceWhatsApp(invoice, items, index) {
-    const mobile = normalizeMobile(invoice.mobile || selectedCustomer?.mobile);
-    const text = encodeURIComponent(invoiceShareText(invoice, items, index));
-    window.open(mobile ? `https://wa.me/91${mobile}?text=${text}` : `https://wa.me/?text=${text}`, "_blank");
+    window.open(buildWhatsAppUrl(invoice.mobile || selectedCustomer?.mobile, invoiceShareText(invoice, items, index)), "_blank");
   }
 
   function printCustomerInvoice(invoice, items, index) {
@@ -253,7 +230,7 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
                 </div>
                 <div className="customer-card-actions">
                   <a className="ghost-btn" href={`tel:${c.mobile}`}>Call</a>
-                  <a className="ghost-btn" href={`https://wa.me/91${normalizeMobile(c.mobile)}?text=${encodeURIComponent(`Namaste ${c.name || ""}, AquaBiz se baat kar rahe hain.`)}`} target="_blank" rel="noreferrer">WhatsApp</a>
+                  <a className="ghost-btn" href={buildWhatsAppUrl(c.mobile, customerGreetingMessage(c.name, businessSettings?.business_name))} target="_blank" rel="noreferrer">WhatsApp</a>
                   <button className="primary-btn" onClick={() => onCreateBooking?.(c)} type="button">New Booking</button>
                 </div>
               </article>
