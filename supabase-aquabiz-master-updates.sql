@@ -59,6 +59,7 @@ create table if not exists sales_persons (
 create table if not exists technician_locations (
   id uuid primary key default gen_random_uuid(),
   technician_id uuid not null,
+  technician_name text,
   job_assignment_id uuid,
   latitude numeric not null,
   longitude numeric not null,
@@ -68,6 +69,9 @@ create table if not exists technician_locations (
   tracking_type text default 'duty',
   created_at timestamptz default now()
 );
+
+alter table technician_locations
+add column if not exists technician_name text;
 
 create table if not exists employee_salary_settings (
   id uuid primary key default gen_random_uuid(),

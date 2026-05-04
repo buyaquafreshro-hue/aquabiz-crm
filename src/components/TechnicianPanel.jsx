@@ -56,7 +56,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
   async function saveLocation({ online = true, type = "duty", jobId = null } = {}) {
     if (!loggedInTech) return;
     if (!navigator.geolocation) {
-      setMessage("Location not supported on this device/browser.");
+      setMessage("Duty status is not supported on this device/browser.");
       return;
     }
 
@@ -76,7 +76,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
         }]);
         if (error) setMessage(error.message);
       },
-      () => setMessage("Location permission denied. Please allow location permission."),
+      () => setMessage("Permission denied. Please allow duty permission."),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
     );
   }
@@ -84,7 +84,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
   function startTracking(type = "duty", jobId = null) {
     if (trackingTimerRef.current) window.clearInterval(trackingTimerRef.current);
     setTracking({ active: true, type, jobId });
-    setMessage("Location tracking active.");
+    setMessage(type === "job" ? "Job in progress." : "You are on duty.");
     saveLocation({ online: true, type, jobId });
     trackingTimerRef.current = window.setInterval(() => saveLocation({ online: true, type, jobId }), 60000);
   }
@@ -94,7 +94,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
     trackingTimerRef.current = null;
     await saveLocation({ online: false, type: tracking.type || "duty", jobId: tracking.jobId });
     setTracking({ active: false, type: "", jobId: null });
-    setMessage("Location tracking stopped.");
+    setMessage("You are currently off duty.");
   }
 
   function logout() {
@@ -195,17 +195,17 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
       <section className="panel technician-tracking-panel">
         <div className="panel-head">
           <div>
-            <h3>Location Tracking</h3>
-            <p className="muted">{tracking.active ? "Location tracking active" : "Location tracking stopped"}</p>
+            <h3>Duty Status</h3>
+            <p className="muted">{tracking.active ? "You are on duty" : "You are currently off duty"}</p>
           </div>
           <span className={tracking.active ? "status assigned" : "status unassigned"}>{tracking.active ? "Online" : "Offline"}</span>
         </div>
         <div className="row-actions">
           <button className="primary-btn small" onClick={() => startTracking("duty", null)} disabled={tracking.active}>Start Duty</button>
-          <button className="ghost-btn small" onClick={stopTracking} disabled={!tracking.active}>Stop Duty</button>
+          <button className="ghost-btn small" onClick={stopTracking} disabled={!tracking.active}>End Duty</button>
         </div>
-        <p className="helper">Location saves every 60 seconds while duty or job tracking is active.</p>
-        {message && <div className={message.includes("active") || message.includes("stopped") ? "success-box" : "error-box"}>{message}</div>}
+        <p className="helper">Duty status saves every 60 seconds while duty or job is active.</p>
+        {message && <div className={message.includes("duty") || message.includes("Job in progress") ? "success-box" : "error-box"}>{message}</div>}
       </section>
 
       <section className="panel technician-jobs-panel">
@@ -263,18 +263,18 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
                     className="ghost-btn small"
                     onClick={() => startTracking("job", job.id)}
                   >
-                    Start Tracking Job
+                    Job in progress
                   </button>
 
                   {tracking.active && String(tracking.jobId || "") === String(job.id) && (
-                    <button className="ghost-btn small" onClick={stopTracking}>Stop Tracking Job</button>
+                    <button className="ghost-btn small" onClick={stopTracking}>End Duty</button>
                   )}
 
                   <button
                     className="primary-btn small"
                     onClick={() => updateStatus(job, "Completed")}
                   >
-                    Mark Completed
+                    Complete Job
                   </button>
 
                   {!hasInvoice && booking && (
