@@ -5,6 +5,7 @@ import { supabase } from "../supabaseClient";
 import { formatINR } from "../utils/appUtils";
 import { calculateTechnicianStats, isOpenJobStatus } from "../utils/roleDashboard";
 import { buildWhatsAppUrl, customerGreetingMessage } from "../utils/whatsappUtils";
+import { useAutoHideMessage } from "../utils/toastUtils";
 export function TechnicianPanel({ jobs, bookings, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, businessSettings, onUpdated }) {
   const [login, setLogin] = useState({ mobile: "", pin: "" });
   const [loggedInTech, setLoggedInTech] = useState(null);
@@ -12,6 +13,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
   const [tracking, setTracking] = useState({ active: false, type: "", jobId: null });
   const [message, setMessage] = useState("");
   const trackingTimerRef = useRef(null);
+  useAutoHideMessage(message, setMessage);
 
   const filteredJobs = loggedInTech
     ? jobs.filter((job) => String(job.technician_id) === String(loggedInTech.id) && isOpenJobStatus(job.status))

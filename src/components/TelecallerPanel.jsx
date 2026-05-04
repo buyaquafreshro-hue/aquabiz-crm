@@ -3,6 +3,7 @@ import { LeadsPage } from "../pages/LeadsPage";
 import { NewBooking } from "../pages/NewBooking";
 import { formatINR } from "../utils/appUtils";
 import { calculateTelecallerStats } from "../utils/roleDashboard";
+import { useAutoHideMessage } from "../utils/toastUtils";
 
 export function TelecallerPanel({ telecallers, leads, services, technicians, customers = [], bookings = [], jobs = [], invoices = [], onUpdated }) {
   const [login, setLogin] = useState({ mobile: "", pin: "" });
@@ -10,6 +11,7 @@ export function TelecallerPanel({ telecallers, leads, services, technicians, cus
   const [tab, setTab] = useState("leads");
   const [leadDraft, setLeadDraft] = useState(null);
   const [message, setMessage] = useState("");
+  useAutoHideMessage(message, setMessage);
 
   function handleLogin() {
     setMessage("");

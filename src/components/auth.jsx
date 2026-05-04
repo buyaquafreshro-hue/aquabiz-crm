@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "../supabaseClient";
+import { useAutoHideMessage } from "../utils/toastUtils";
 
 export function LoginScreen({ onAdminLogin, onTechnicianOpen, onTelecallerOpen, onSalesOpen }) {
   const [mode, setMode] = useState("admin");
@@ -7,6 +8,7 @@ export function LoginScreen({ onAdminLogin, onTechnicianOpen, onTelecallerOpen, 
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  useAutoHideMessage(message, setMessage);
 
   async function adminLogin() {
     setMessage("");

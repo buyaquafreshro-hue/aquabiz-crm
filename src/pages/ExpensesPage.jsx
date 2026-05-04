@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { formatINR, getLocalMonthKey, todayISO } from "../utils/appUtils";
+import { useAutoHideMessage } from "../utils/toastUtils";
 
 const emptyExpense = {
   expense_date: todayISO(),
@@ -43,11 +44,7 @@ export function ExpensesPage({ expenseCategories = [], expenses = [], onUpdated 
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!message) return;
-    const timer = window.setTimeout(() => setMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [message]);
+  useAutoHideMessage(message, setMessage);
 
   const categoriesById = useMemo(() => {
     const map = new Map();

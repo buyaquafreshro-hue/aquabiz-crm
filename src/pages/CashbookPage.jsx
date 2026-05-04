@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { formatINR, getLocalMonthKey, getPaidAmount, todayISO } from "../utils/appUtils";
+import { useAutoHideMessage } from "../utils/toastUtils";
 
 function dateKey(value) {
   if (!value) return "";
@@ -130,11 +131,7 @@ export function CashbookPage({ invoices = [], invoicePayments = [], expenses = [
     setOpeningCash(String(savedOpening?.opening_cash || 0));
   }, [savedOpening?.id, selectedDate]);
 
-  useEffect(() => {
-    if (!message) return;
-    const timer = window.setTimeout(() => setMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [message]);
+  useAutoHideMessage(message, setMessage);
 
   const allEntries = useMemo(() => [
     ...buildInvoiceEntries(invoices, invoicePayments),

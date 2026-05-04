@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { formatINR, uniqueServices } from "../utils/appUtils";
+import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 
 function Accordion({ title, count, defaultOpen = false, children }) {
   return (
@@ -54,11 +55,7 @@ export function SettingsPage({ services, setPage, onUpdated }) {
     loadSalesPersons();
   }, []);
 
-  useEffect(() => {
-    if (!message) return;
-    const timer = window.setTimeout(() => setMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [message]);
+  useAutoHideMessage(message, setMessage);
 
   function serviceDraft(service) {
     return serviceEdit[service.id] || { name: service.name || "", price: service.price || "" };
@@ -233,7 +230,7 @@ export function SettingsPage({ services, setPage, onUpdated }) {
     await onUpdated();
   }
 
-  const successMessage = ["added", "updated", "deleted"].some((word) => message.toLowerCase().includes(word));
+  const successMessage = isSuccessToast(message);
 
   return (
     <>

@@ -4,10 +4,12 @@ import { FormCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
 import { addDays, coverageLabel, formatINR, todayISO } from "../utils/appUtils";
 import { calculateSalesIncentive } from "../utils/salesUtils";
+import { useAutoHideMessage } from "../utils/toastUtils";
 export function AmcSalePage({ amcPlans, products, coverages, invoices, salesPersons = [], onUpdated }) {
   const [form, setForm] = useState(emptyActivation);
   const [salesPersonId, setSalesPersonId] = useState("");
   const [message, setMessage] = useState("");
+  useAutoHideMessage(message, setMessage);
   const selectedPlan = amcPlans.find((p) => String(p.id) === String(form.amc_plan_id));
   const selectedProduct = products.find((p) => String(p.id) === String(form.product_id));
   const source = form.type === "amc" ? selectedPlan : selectedProduct;

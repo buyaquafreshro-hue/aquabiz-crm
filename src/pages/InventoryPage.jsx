@@ -4,6 +4,7 @@ import { FormCard } from "../components/shared";
 import { PartsTable, StockBadge } from "../components/PartsTable";
 import { supabase } from "../supabaseClient";
 import { formatINR, todayISO } from "../utils/appUtils";
+import { useAutoHideMessage } from "../utils/toastUtils";
 
 function Accordion({ title, count, defaultOpen = false, children }) {
   return (
@@ -23,6 +24,7 @@ export function InventoryPage({ categories, inventory, inventoryPurchases = [], 
   const [form, setForm] = useState(emptyPart);
   const [message, setMessage] = useState("");
   const [restockItemId, setRestockItemId] = useState("");
+  useAutoHideMessage(message, setMessage);
   const [restock, setRestock] = useState({
     restock_date: todayISO(),
     quantity: "",

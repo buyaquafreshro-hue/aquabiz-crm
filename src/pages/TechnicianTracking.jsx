@@ -5,6 +5,7 @@ import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-
 import { supabase } from "../supabaseClient";
 import { detectStops, formatDuration } from "../utils/locationUtils";
 import { todayISO } from "../utils/appUtils";
+import { useAutoHideMessage } from "../utils/toastUtils";
 
 const markerIcon = L.divIcon({
   className: "tech-location-pin",
@@ -27,6 +28,7 @@ export function TechnicianTracking({ technicians = [] }) {
   const [selectedTechnicianId, setSelectedTechnicianId] = useState("");
   const [date, setDate] = useState(todayISO());
   const [message, setMessage] = useState("");
+  useAutoHideMessage(message, setMessage);
 
   async function loadLatest() {
     const { data, error } = await supabase.from("latest_technician_locations").select("*").order("created_at", { ascending: false });

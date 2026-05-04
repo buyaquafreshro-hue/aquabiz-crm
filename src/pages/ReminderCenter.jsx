@@ -3,9 +3,11 @@ import { StatCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
 import { addDays, formatINR, getDueAmount, isActive, nextMonthlyDate, todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl, reminderMessage } from "../utils/whatsappUtils";
+import { useAutoHideMessage } from "../utils/toastUtils";
 export function ReminderCenter({ coverages, invoices, leads, businessSettings = {}, onUpdated }) {
   const [reschedule, setReschedule] = useState(null);
   const [message, setMessage] = useState("");
+  useAutoHideMessage(message, setMessage);
 
   const serviceReminders = coverages
     .filter((item) => item.next_service_due_date && String(item.next_service_due_date) <= todayISO() && isActive(item))

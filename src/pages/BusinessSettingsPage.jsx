@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { FormCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
+import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 export function BusinessSettingsPage({ settings, language, setLanguage, onUpdated }) {
   const [form, setForm] = useState({
     business_name: settings?.business_name || "AquaBiz",
@@ -27,6 +28,8 @@ export function BusinessSettingsPage({ settings, language, setLanguage, onUpdate
     app_language: settings?.app_language || language || "en",
   });
   const [message, setMessage] = useState("");
+
+  useAutoHideMessage(message, setMessage);
 
   useEffect(() => {
     if (settings) {
@@ -270,7 +273,7 @@ export function BusinessSettingsPage({ settings, language, setLanguage, onUpdate
           </FormCard>
           </section>
 
-          {message && <div className={message.includes("saved") ? "success-box" : "error-box"}>{message}</div>}
+          {message && <div className={isSuccessToast(message) ? "success-box" : "error-box"}>{message}</div>}
 
           <button className="primary-btn big" onClick={saveSettings}>Save Business Settings</button>
         </div>

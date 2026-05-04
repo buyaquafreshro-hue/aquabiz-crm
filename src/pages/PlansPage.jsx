@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { emptyPlan, emptyProduct } from "../constants/defaults";
 import { FormCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
 import { arrIncludes, formatINR } from "../utils/appUtils";
+import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 
 function Accordion({ title, count, defaultOpen = false, children }) {
   return (
@@ -23,11 +24,7 @@ export function PlansPage({ categories, inventory, amcPlans, products, onUpdated
   const [productEdit, setProductEdit] = useState({});
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    if (!message) return;
-    const timer = window.setTimeout(() => setMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [message]);
+  useAutoHideMessage(message, setMessage);
 
   function noRowsMessage(tableName) {
     return `${tableName} save nahi hua. Supabase RLS/update policy check karein.`;
@@ -163,7 +160,7 @@ export function PlansPage({ categories, inventory, amcPlans, products, onUpdated
     await onUpdated();
   }
 
-  const successMessage = ["saved", "updated", "deleted"].some((word) => message.toLowerCase().includes(word));
+  const successMessage = isSuccessToast(message);
 
   return (
     <>

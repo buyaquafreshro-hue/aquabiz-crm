@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import { InvoicePaymentForm } from "./CollectionsPage";
 import { supabase } from "../supabaseClient";
 import { formatINR, getDueAmount, getLocalMonthKey, nextMonthlyDate, todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl, emiReceiptMessage, emiReminderMessage } from "../utils/whatsappUtils";
+import { useAutoHideMessage } from "../utils/toastUtils";
 
 function dateKey(value) {
   return String(value || "").slice(0, 10);
@@ -157,11 +158,7 @@ export function EmiManagementPage({ invoices = [], invoicePayments = [], busines
   const [paymentInvoiceId, setPaymentInvoiceId] = useState("");
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    if (!message) return;
-    const timer = window.setTimeout(() => setMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [message]);
+  useAutoHideMessage(message, setMessage);
 
   const emiInvoices = useMemo(() => invoices.filter(isEmiInvoice), [invoices]);
   const enrichedInvoices = emiInvoices.map((invoice) => {

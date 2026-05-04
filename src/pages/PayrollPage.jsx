@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { formatINR, getLocalMonthKey } from "../utils/appUtils";
 import { calculatePayroll, employeeLabel, employeeRoles, getEmployeesByRole, salaryTypes } from "../utils/payrollUtils";
+import { useAutoHideMessage } from "../utils/toastUtils";
 
 const emptySetting = {
   role: "telecaller",
@@ -59,11 +60,7 @@ export function PayrollPage({
   const [statusFilter, setStatusFilter] = useState("all");
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    if (!message) return;
-    const timer = window.setTimeout(() => setMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [message]);
+  useAutoHideMessage(message, setMessage);
 
   const employeesByRole = { telecallers, technicians, salesPersons };
   const payrollRows = useMemo(() => calculatePayroll({

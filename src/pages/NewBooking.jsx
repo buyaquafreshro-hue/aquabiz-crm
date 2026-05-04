@@ -3,12 +3,14 @@ import { emptyBooking } from "../constants/defaults";
 import { supabase } from "../supabaseClient";
 import { formatINR, generateOtp, uniqueServices } from "../utils/appUtils";
 import { saveJobAssignment } from "../services/jobAssignments";
+import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 
 export function NewBooking({ services, technicians, customers = [], initialLead = null, telecaller = null, onDone }) {
   const [form, setForm] = useState(emptyBooking);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [matchedCustomer, setMatchedCustomer] = useState(null);
+  useAutoHideMessage(message, setMessage);
   const cleanServices = uniqueServices(services);
   const selectedService = cleanServices.find((s) => s.id === form.serviceId) || cleanServices[0];
   const serviceAmount = Number(selectedService?.price || 0);
@@ -188,7 +190,7 @@ export function NewBooking({ services, technicians, customers = [], initialLead 
           <input value={form.complaintNotes} onChange={(e) => setForm({ ...form, complaintNotes: e.target.value })} placeholder="Leaking tap, filter change, low flow etc." autoComplete="off" />
         </div>
 
-        {message && <div className={message.includes("error") ? "error-box" : "success-box"}>{message}</div>}
+        {message && <div className={isSuccessToast(message) ? "success-box" : "error-box"}>{message}</div>}
 
         <button className="primary-btn big booking-confirm-btn" onClick={saveBooking} disabled={saving}>
           {saving ? "Saving..." : "Confirm Booking"}

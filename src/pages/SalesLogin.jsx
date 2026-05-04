@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatINR } from "../utils/appUtils";
 import { calculateSalesStats } from "../utils/salesUtils";
+import { useAutoHideMessage } from "../utils/toastUtils";
 
 const SALES_SESSION_KEY = "aquabiz_sales_person";
 
@@ -8,6 +9,7 @@ export function SalesLogin({ salesPersons = [], invoices = [], onLogout }) {
   const [login, setLogin] = useState({ mobile: "", pin: "" });
   const [salesPerson, setSalesPerson] = useState(null);
   const [message, setMessage] = useState("");
+  useAutoHideMessage(message, setMessage);
 
   useEffect(() => {
     const stored = localStorage.getItem(SALES_SESSION_KEY);

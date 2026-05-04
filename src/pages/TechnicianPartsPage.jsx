@@ -2,9 +2,11 @@ import { useState } from "react";
 import { emptyTechnicianPart } from "../constants/defaults";
 import { PartsTable } from "../components/PartsTable";
 import { supabase } from "../supabaseClient";
+import { useAutoHideMessage } from "../utils/toastUtils";
 export function TechnicianPartsPage({ technicians, technicianParts = [], inventory, onUpdated }) {
   const [partForm, setPartForm] = useState(emptyTechnicianPart);
   const [message, setMessage] = useState("");
+  useAutoHideMessage(message, setMessage);
 
   async function assignTechnicianPart() {
     setMessage("");

@@ -4,6 +4,7 @@ import { FormCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
 import { todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl, customerGreetingMessage } from "../utils/whatsappUtils";
+import { useAutoHideMessage } from "../utils/toastUtils";
 export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTelecaller = null, onUpdated, setPage, onCreateBooking }) {
   const [form, setForm] = useState({ ...emptyLead, address: "", area: "", service_need: "" });
   const [showLeadForm, setShowLeadForm] = useState(!loggedInTelecaller);
@@ -13,6 +14,7 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
   const [openLeadId, setOpenLeadId] = useState(null);
   const [matchedCustomer, setMatchedCustomer] = useState(null);
   const [message, setMessage] = useState("");
+  useAutoHideMessage(message, setMessage);
 
   useEffect(() => {
     const cleanMobile = String(form.mobile || "").replace(/\D/g, "");

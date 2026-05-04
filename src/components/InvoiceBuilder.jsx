@@ -5,6 +5,7 @@ import { PartsTable, StockBadge } from "./PartsTable";
 import { supabase } from "../supabaseClient";
 import { addDays, coverageLabel, formatINR, isActive, itemCoveredByRecord, nextMonthlyDate, todayISO } from "../utils/appUtils";
 import { calculateSalesIncentive } from "../utils/salesUtils";
+import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], coverages, invoices, amcPlans = [], products = [], salesPersons = [], businessSettings = {}, onClose, onDone }) {
   const [invoiceType, setInvoiceType] = useState("service");
   const [selectedPlanId, setSelectedPlanId] = useState("");
@@ -27,6 +28,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
   const [showPaymentConfirm, setShowPaymentConfirm] = useState(false);
   const [salesPersonId, setSalesPersonId] = useState("");
   const [message, setMessage] = useState("");
+  useAutoHideMessage(message, setMessage);
 
   const selectedPlan = amcPlans.find((p) => String(p.id) === String(selectedPlanId));
   const selectedProduct = products.find((p) => String(p.id) === String(selectedProductId));
@@ -649,7 +651,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
         <strong>{formatINR(total)}</strong>
       </div>
 
-      {message && <div className={message.includes("success") ? "success-box" : "error-box"}>{message}</div>}
+      {message && <div className={isSuccessToast(message) ? "success-box" : "error-box"}>{message}</div>}
 
       {showPaymentConfirm && upfrontUpiQrAmount > 0 && (
         <section className="payment-confirm-box">

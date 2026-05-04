@@ -4,10 +4,12 @@ import { StatCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
 import { formatINR, getDueAmount, getPaidAmount, nextMonthlyDate, todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl, paymentReminderMessage } from "../utils/whatsappUtils";
+import { useAutoHideMessage } from "../utils/toastUtils";
 export function InvoicePaymentForm({ invoice, onClose, onDone }) {
   const [form, setForm] = useState(emptyPayment);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  useAutoHideMessage(message, setMessage);
   const cash = Number(form.cash_amount || 0);
   const upi = Number(form.upi_amount || 0);
   const newPayment = cash + upi;
@@ -131,6 +133,7 @@ export function CollectionsPage({ invoices, invoicePayments = [], businessSettin
   const [followUpInvoiceId, setFollowUpInvoiceId] = useState(null);
   const [followUpForm, setFollowUpForm] = useState({ date: todayISO(), note: "" });
   const [message, setMessage] = useState("");
+  useAutoHideMessage(message, setMessage);
 
   const pendingInvoices = invoices
     .filter((invoice) => getDueAmount(invoice) > 0)

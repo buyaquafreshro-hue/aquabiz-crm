@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { FormCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
 import { formatINR, todayISO } from "../utils/appUtils";
+import { useAutoHideMessage } from "../utils/toastUtils";
 
 const emptyTemplate = {
   product_id: "",
@@ -22,11 +23,7 @@ export function BomAssemblyPage({ products = [], inventory = [], bomTemplates = 
   const [assemblyNotes, setAssemblyNotes] = useState("");
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    if (!message) return;
-    const timer = window.setTimeout(() => setMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [message]);
+  useAutoHideMessage(message, setMessage);
 
   const selectedTemplate = bomTemplates.find((template) => String(template.id) === String(selectedTemplateId)) || bomTemplates[0];
   const selectedItems = selectedTemplate
