@@ -98,8 +98,9 @@ export async function fetchAppData() {
     ["assembly_orders", assemblyOrdersRes],
   ];
 
+  const optionalTables = new Set(["bom_templates", "bom_template_items", "assembly_orders"]);
   const dataErrors = responses
-    .filter(([, res]) => res?.error)
+    .filter(([name, res]) => res?.error && !optionalTables.has(name))
     .map(([name, res]) => `${name}: ${res.error.message}`);
 
   if (dataErrors.length) {
