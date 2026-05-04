@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { BookingMini, StatCard } from "../components/shared";
-import { formatINR, getDueAmount, getPaidAmount, isActive, isCompletedStatus, normalizeMobile, todayISO } from "../utils/appUtils";
-export function CustomerHistoryPage({ mode = "search", initialMobile = "", customers, bookings, jobs = [], technicians = [], invoices, invoiceItems, invoicePayments = [], usage = [], coverages, leads = [], onCustomerOpen, onBack, onCreateBooking }) {
+import { coverageLabel, formatINR, getDueAmount, getPaidAmount, isActive, isCompletedStatus, normalizeMobile, todayISO } from "../utils/appUtils";
+export function CustomerHistoryPage({ mode = "search", initialMobile = "", customers, bookings, jobs = [], technicians = [], invoices, invoiceItems, invoicePayments = [], usage = [], coverages, leads = [], businessSettings, onCustomerOpen, onBack, onCreateBooking }) {
   const [search, setSearch] = useState("");
   const [selectedMobile, setSelectedMobile] = useState(initialMobile || "");
+  const [filter, setFilter] = useState("all");
   const isListMode = mode === "list";
   const isDetailMode = mode === "detail";
 
@@ -12,7 +13,7 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
   }, [initialMobile]);
 
   const searchText = search.trim().toLowerCase();
-  const filtered = searchText ? customers.filter((c) => {
+  const baseFiltered = searchText ? customers.filter((c) => {
     const q = searchText;
     return (
       String(c.name || "").toLowerCase().includes(q) ||
@@ -20,6 +21,29 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
       String(c.address || "").toLowerCase().includes(q)
     );
   }) : isListMode ? customers : [];
+
+  function customerStatus(customer) {
+    const mobile = normalizeMobile(customer.mobile);
+    const customerCoverages = coverages.filter((c) => normalizeMobile(c.mobile) === mobile);
+    const activeCoverage = customerCoverages.some(isActive);
+    const dueService = customerCoverages.some((c) => c.next_service_due_date && String(c.next_service_due_date) <= todayISO() && isActive(c));
+    if (dueService) return "Service Due";
+    if (activeCoverage) return "Active";
+    return "Inactive";
+  }
+
+  function initials(name = "") {
+    const parts = String(name || "Customer").trim().split(/\s+/);
+    return `${parts[0]?.[0] || "C"}${parts[1]?.[0] || ""}`.toUpperCase();
+  }
+
+  const filtered = baseFiltered.filter((customer) => {
+    if (filter === "all") return true;
+    if (filter === "due") return customerStatus(customer) === "Service Due";
+    if (filter === "active") return customerStatus(customer) === "Active";
+    if (filter === "inactive") return customerStatus(customer) === "Inactive";
+    return true;
+  });
 
   const selectedMobileKey = normalizeMobile(selectedMobile);
   const selectedCustomer = customers.find((c) => normalizeMobile(c.mobile) === selectedMobileKey);
@@ -53,6 +77,72 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
     return mobile ? `https://wa.me/91${mobile}?text=${text}` : `https://wa.me/?text=${text}`;
   }
 
+  function getInvoiceNumber(invoice, index = 0) {
+    const shortId = String(invoice.id || "").slice(0, 6).toUpperCase();
+    return `${businessSettings?.invoice_prefix || "INV"}-${shortId || index + 1}`;
+  }
+
+  function invoiceShareText(invoice, items, index) {
+    const lines = [
+      `${businessSettings?.business_name || "AquaBiz"} Invoice`,
+      `Invoice No: ${getInvoiceNumber(invoice, index)}`,
+      `Customer: ${invoice.customer_name || selectedCustomer?.name || ""}`,
+      `Mobile: ${invoice.mobile || selectedCustomer?.mobile || ""}`,
+      `Type: ${invoice.invoice_type || "service"}`,
+      `Total: ${formatINR(invoice.total_amount)}`,
+      `Paid: ${formatINR(getPaidAmount(invoice))}`,
+      `Pending: ${formatINR(getDueAmount(invoice))}`,
+      `Status: ${invoice.payment_status || ""}`,
+    ];
+
+    if (items.length > 0) {
+      lines.push("", "Items:");
+      items.forEach((item) => lines.push(`${item.item_name} x ${item.quantity || 1} - ${formatINR(item.billing_price)}`));
+    }
+
+    if (businessSettings?.upi_id && getDueAmount(invoice) > 0) lines.push("", `UPI ID: ${businessSettings.upi_id}`);
+    if (businessSettings?.business_phone || businessSettings?.phone) lines.push(`Phone: ${businessSettings.business_phone || businessSettings.phone}`);
+    lines.push("Thank you.");
+    return lines.join("\n");
+  }
+
+  function shareInvoiceWhatsApp(invoice, items, index) {
+    const mobile = normalizeMobile(invoice.mobile || selectedCustomer?.mobile);
+    const text = encodeURIComponent(invoiceShareText(invoice, items, index));
+    window.open(mobile ? `https://wa.me/91${mobile}?text=${text}` : `https://wa.me/?text=${text}`, "_blank");
+  }
+
+  function printCustomerInvoice(invoice, items, index) {
+    const invoiceNo = getInvoiceNumber(invoice, index);
+    const business = businessSettings || {};
+    const rows = items.length
+      ? items.map((item) => `<tr><td>${item.item_name || ""}</td><td>${item.quantity || 1}</td><td>Rs ${Number(item.billing_price || 0).toLocaleString("en-IN")}</td></tr>`).join("")
+      : `<tr><td>${invoice.invoice_type || "Service"}</td><td>1</td><td>Rs ${Number(invoice.total_amount || 0).toLocaleString("en-IN")}</td></tr>`;
+    const html = `
+      <html><head><title>${invoiceNo}</title><style>
+        body{font-family:Arial,sans-serif;margin:0;padding:28px;color:#111827;background:#f8fafc}
+        .sheet{max-width:760px;margin:auto;background:#fff;border:1px solid #e5e7eb;padding:28px}
+        .head{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #0f766e;padding-bottom:16px}
+        h1{margin:0;color:#000666} p{margin:4px 0;color:#475569}
+        .box{border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-top:14px}
+        table{width:100%;border-collapse:collapse;margin-top:14px} th,td{border:1px solid #e5e7eb;padding:10px;text-align:left}
+        th{background:#ecfdf5;color:#064e3b}.total{font-size:22px;font-weight:800;color:#0f766e}
+        @media print{body{background:#fff;padding:0}.sheet{border:0}}
+      </style></head><body>
+        <div class="sheet">
+          <div class="head"><div><h1>${business.business_name || "AquaBiz"}</h1><p>${business.business_phone || business.phone || ""}</p><p>${business.business_address || business.address || ""}</p></div><div><strong>${invoiceNo}</strong><p>Date: ${invoice.invoice_date || String(invoice.created_at || "").slice(0, 10)}</p></div></div>
+          <div class="box"><p><strong>Customer:</strong> ${invoice.customer_name || selectedCustomer?.name || ""}</p><p><strong>Mobile:</strong> ${invoice.mobile || selectedCustomer?.mobile || ""}</p><p><strong>Type:</strong> ${invoice.invoice_type || "service"}</p></div>
+          <table><thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table>
+          <table><tr><td>Total</td><td class="total">Rs ${Number(invoice.total_amount || 0).toLocaleString("en-IN")}</td></tr><tr><td>Paid</td><td>Rs ${Number(getPaidAmount(invoice) || 0).toLocaleString("en-IN")}</td></tr><tr><td>Pending</td><td>Rs ${Number(getDueAmount(invoice) || 0).toLocaleString("en-IN")}</td></tr><tr><td>Status</td><td>${invoice.payment_status || ""}</td></tr></table>
+          <div class="box"><p>${business.terms || "Thank you for your business."}</p></div>
+        </div><script>window.onload=function(){window.print()}</script>
+      </body></html>`;
+    const printWindow = window.open("", "_blank");
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+  }
+
   return (
     <>
       <section className="page-head">
@@ -61,28 +151,52 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
       </section>
 
       {!isDetailMode && <section className="panel">
-        <input
-          placeholder={isListMode ? "Search customers by name, mobile, or address" : "Search customer by mobile number"}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <div className="customer-search-wrap">
+          <span>Search</span>
+          <input
+            placeholder={isListMode ? "Search customers by name or phone..." : "Search customer by mobile number"}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        <div className="customer-filter-chips">
+          <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")} type="button">All Customers</button>
+          <button className={filter === "due" ? "active" : ""} onClick={() => setFilter("due")} type="button">Due Service</button>
+          <button className={filter === "active" ? "active" : ""} onClick={() => setFilter("active")} type="button">Active</button>
+          <button className={filter === "inactive" ? "active" : ""} onClick={() => setFilter("inactive")} type="button">Inactive</button>
+        </div>
 
         {(isListMode || searchText) && (
-          <div className="customer-list">
+          <div className="customer-card-list">
             {filtered.length === 0 ? <p className="muted">No customer found.</p> : (isListMode ? filtered : filtered.slice(0, 8)).map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                className={selectedMobileKey === normalizeMobile(c.mobile) ? "customer-chip active" : "customer-chip"}
-                onClick={() => {
-                  const mobile = normalizeMobile(c.mobile);
-                  setSelectedMobile(mobile);
-                  onCustomerOpen?.(mobile);
-                }}
-              >
-                <strong>{c.name}</strong>
-                <span>{c.mobile}</span>
-              </button>
+              <article className={selectedMobileKey === normalizeMobile(c.mobile) ? "customer-card active" : "customer-card"} key={c.id}>
+                <button
+                  type="button"
+                  className="customer-card-main"
+                  onClick={() => {
+                    const mobile = normalizeMobile(c.mobile);
+                    setSelectedMobile(mobile);
+                    onCustomerOpen?.(mobile);
+                  }}
+                >
+                  <div className="customer-avatar">{initials(c.name)}</div>
+                  <div>
+                    <h3>{c.name}</h3>
+                    <p>{c.mobile}</p>
+                  </div>
+                  <span className={`customer-status ${customerStatus(c).toLowerCase().replace(/\s+/g, "-")}`}>{customerStatus(c)}</span>
+                </button>
+                <div className="customer-address-line">
+                  <span>Location</span>
+                  <p>{c.address || "Address not added"}</p>
+                </div>
+                <div className="customer-card-actions">
+                  <a className="ghost-btn" href={`tel:${c.mobile}`}>Call</a>
+                  <a className="ghost-btn" href={`https://wa.me/91${normalizeMobile(c.mobile)}?text=${encodeURIComponent(`Namaste ${c.name || ""}, AquaBiz se baat kar rahe hain.`)}`} target="_blank" rel="noreferrer">WhatsApp</a>
+                  <button className="primary-btn" onClick={() => onCreateBooking?.(c)} type="button">New Booking</button>
+                </div>
+              </article>
             ))}
           </div>
         )}
@@ -105,12 +219,15 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
             <StatCard icon="L" label="Leads" value={customerLeads.length} />
           </section>
 
-          <section className="panel">
+          <section className="panel customer-profile-panel">
             <div className="section-head">
-              <div>
+              <div className="customer-profile-title">
+                <div className="customer-avatar big">{initials(selectedCustomer.name)}</div>
+                <div>
                 <h3>{selectedCustomer.name}</h3>
                 <p>{selectedCustomer.mobile}</p>
                 <p>{selectedCustomer.address}</p>
+                </div>
               </div>
               <div className="row-actions">
                 {isDetailMode && <button className="ghost-btn small" onClick={onBack}>Back</button>}
@@ -196,18 +313,26 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
 
           <section className="panel">
             <h3>Invoices</h3>
-            {customerInvoices.length === 0 ? <p className="muted">No invoices.</p> : customerInvoices.map((inv) => {
+            {customerInvoices.length === 0 ? <p className="muted">No invoices.</p> : customerInvoices.map((inv, index) => {
               const items = invoiceItems.filter((i) => String(i.invoice_id) === String(inv.id));
-              const payments = invoicePayments.filter((p) => String(p.invoice_id) === String(inv.id));
               return (
                 <div className="job-card" key={inv.id}>
-                  <strong>{inv.invoice_type}</strong>
+                  <div className="booking-card-head">
+                    <div>
+                      <strong>{getInvoiceNumber(inv, index)} - {inv.invoice_type}</strong>
+                      <p>Status: {inv.payment_status} | Method: {inv.payment_method}</p>
+                    </div>
+                    <span className={getDueAmount(inv) > 0 ? "status unassigned" : "status assigned"}>{getDueAmount(inv) > 0 ? "Pending" : "Paid"}</span>
+                  </div>
                   <p>Total: {formatINR(inv.total_amount)} | Paid: {formatINR(getPaidAmount(inv))} | Due: {formatINR(getDueAmount(inv))}</p>
-                  <p>Status: {inv.payment_status} | Method: {inv.payment_method}</p>
                   {inv.payment_method === "emi" && <p className="muted">EMI: {formatINR(inv.emi_monthly_amount)} | Next Due: {inv.emi_next_due_date || "Not set"}</p>}
                   {items.map((item) => (
                     <div className="mini-line" key={item.id}>{item.item_name} x {item.quantity} — {formatINR(item.billing_price)}</div>
                   ))}
+                  <div className="customer-invoice-actions">
+                    <button className="primary-btn small" onClick={() => printCustomerInvoice(inv, items, index)}>View / Print Invoice</button>
+                    <button className="ghost-btn small" onClick={() => shareInvoiceWhatsApp(inv, items, index)}>Share WhatsApp</button>
+                  </div>
                 </div>
               );
             })}

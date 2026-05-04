@@ -8,6 +8,7 @@ import {
   isActive,
   todayISO,
 } from "./appUtils";
+import { isOpenJobStatus } from "./roleDashboard";
 
 export function calculateDashboardStats({
   bookings = [],
@@ -29,6 +30,7 @@ export function calculateDashboardStats({
   const totalCollection = currentMonthInvoices.reduce((sum, invoice) => sum + getPaidAmount(invoice), 0);
   const pending = currentMonthInvoices.reduce((sum, invoice) => sum + getDueAmount(invoice), 0);
   const assignedIds = new Set(jobs.map((job) => String(job.booking_id)));
+  const bookingIds = new Set(bookings.map((booking) => String(booking.id)));
   const lowStock = inventory.filter((part) => Number(part.stock_qty || 0) <= Number(part.low_stock_qty || 0)).length;
   const serviceDue = coverages.filter((coverage) => coverage.next_service_due_date && String(coverage.next_service_due_date) <= todayISO() && isActive(coverage)).length;
   const emiDue = invoices.filter((invoice) => invoice.payment_method === "emi" && getDueAmount(invoice) > 0 && invoice.emi_next_due_date && String(invoice.emi_next_due_date) <= todayISO()).length;
@@ -51,7 +53,7 @@ export function calculateDashboardStats({
     pending,
     pendingJobs: bookings.filter((booking) => !assignedIds.has(String(booking.id))).length,
     totalJobs: jobs.length,
-    openJobs: Math.max(jobs.length - completedJobs, 0),
+    openJobs: jobs.filter((job) => bookingIds.has(String(job.booking_id)) && isOpenJobStatus(job.status)).length,
     completedJobs,
     lowStock,
     activeCoverages: coverages.filter(isActive).length,

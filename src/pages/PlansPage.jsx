@@ -167,15 +167,34 @@ export function PlansPage({ categories, inventory, amcPlans, products, onUpdated
 
   return (
     <>
-      <section className="page-head">
+      <section className="page-head plans-page-head">
         <h2>Plans / Products</h2>
         <p>Manage AMC plans and RO products separately.</p>
+      </section>
+
+      <section className="amount-grid plans-summary-grid">
+        <div className="amount-box">
+          <span>AMC Plans</span>
+          <strong>{amcPlans.length}</strong>
+        </div>
+        <div className="amount-box">
+          <span>RO Products</span>
+          <strong>{products.length}</strong>
+        </div>
+        <div className="amount-box">
+          <span>Inventory Parts</span>
+          <strong>{inventory.length}</strong>
+        </div>
+        <div className="amount-box">
+          <span>Categories</span>
+          <strong>{categories.length}</strong>
+        </div>
       </section>
 
       {message && <div className={successMessage ? "success-box" : "error-box"}>{message}</div>}
       {message && <div className={successMessage ? "settings-toast success" : "settings-toast error"}>{message}</div>}
 
-      <section className="panel">
+      <section className="panel plans-panel">
         <h3>AMC Plans</h3>
         <Accordion title="Saved AMC Plans" count={amcPlans.length} defaultOpen>
           {amcPlans.length === 0 ? <p className="muted">No AMC plans added.</p> : amcPlans.map((row) => {
@@ -201,7 +220,7 @@ export function PlansPage({ categories, inventory, amcPlans, products, onUpdated
         </Accordion>
       </section>
 
-      <section className="panel">
+      <section className="panel plans-panel">
         <h3>RO Products</h3>
         <Accordion title="Saved RO Products" count={products.length} defaultOpen>
           {products.length === 0 ? <p className="muted">No RO products added.</p> : products.map((row) => {

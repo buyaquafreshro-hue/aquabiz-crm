@@ -408,12 +408,12 @@ export function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], bus
 
   return (
     <>
-      <section className="page-head">
+      <section className="page-head invoice-page-head">
         <h2>Invoices</h2>
         <p>Professional invoice print/PDF aur WhatsApp share.</p>
       </section>
 
-      <section className="panel">
+      <section className="panel invoice-card-grid">
         {invoices.length === 0 ? <p className="muted">No invoices yet.</p> : invoices.map((inv, index) => {
           const items = invoiceItems.filter((i) => String(i.invoice_id) === String(inv.id));
           const payments = invoicePayments.filter((p) => String(p.invoice_id) === String(inv.id));

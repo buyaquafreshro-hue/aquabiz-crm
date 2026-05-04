@@ -23,6 +23,12 @@ const initialData = {
   businessSettings: null,
   leads: [],
   salesPersons: [],
+  payrollSettings: [],
+  salaryAdvances: [],
+  payrollRuns: [],
+  expenseCategories: [],
+  expenses: [],
+  cashbookOpenings: [],
   dataErrors: [],
 };
 

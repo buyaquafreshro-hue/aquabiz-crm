@@ -360,6 +360,10 @@ export function SettingsPage({ services, setPage, onUpdated }) {
           <button onClick={() => setPage("inventory")}>Inventory</button>
           <button onClick={() => setPage("technicianParts")}>Technician Parts</button>
           <button onClick={() => setPage("technicianTracking")}>Technician Tracking</button>
+          <button onClick={() => setPage("payroll")}>Payroll</button>
+          <button onClick={() => setPage("expenses")}>Expenses</button>
+          <button onClick={() => setPage("cashbook")}>Accounts / Cashbook</button>
+          <button onClick={() => setPage("emi")}>EMI Management</button>
           <button onClick={() => setPage("reports")}>Reports</button>
         </div>
       </section>

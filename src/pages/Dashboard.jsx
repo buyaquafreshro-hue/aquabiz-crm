@@ -23,14 +23,13 @@ export function Dashboard({ stats, bookings, jobs, technicians, technicianParts 
 
   return (
     <>
-      <section className="premium-hero">
+      <section className="premium-hero dashboard-overview-head">
         <div>
-          <span className="eyebrow">{t.controlCenter}</span>
-          <h2>{t.dashboard}</h2>
-          <p>{t.heroText}</p>
+          <h2>Service Overview</h2>
+          <p>Manage your daily service pipeline and financials.</p>
         </div>
         <button className="hero-btn" onClick={() => setPage("booking")}>
-          + New Booking
+          New Booking
         </button>
       </section>
 

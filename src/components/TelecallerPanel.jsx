@@ -40,12 +40,12 @@ export function TelecallerPanel({ telecallers, leads, services, technicians, cus
   if (!loggedInTelecaller) {
     return (
       <>
-        <section className="page-head">
+        <section className="page-head telecaller-page-head">
           <h2>Telecaller Login</h2>
           <p>Telecaller logs in using mobile number and 6-digit PIN.</p>
         </section>
 
-        <section className="panel">
+        <section className="panel telecaller-login-panel">
           <div className="form-stack">
             <input placeholder="Telecaller mobile number" inputMode="numeric" value={login.mobile} onChange={(e) => setLogin({ ...login, mobile: e.target.value })} />
             <input placeholder="6 digit PIN" inputMode="numeric" maxLength="6" type="password" value={login.pin} onChange={(e) => setLogin({ ...login, pin: e.target.value })} />
@@ -59,12 +59,12 @@ export function TelecallerPanel({ telecallers, leads, services, technicians, cus
 
   return (
     <>
-      <section className="page-head">
+      <section className="page-head telecaller-page-head">
         <h2>Telecaller App</h2>
         <p>Logged in: {loggedInTelecaller.name} ({loggedInTelecaller.mobile})</p>
       </section>
 
-      <section className="cards-grid">
+      <section className="cards-grid telecaller-stats-grid">
         {(() => {
           const stats = calculateTelecallerStats({ telecaller: loggedInTelecaller, leads, bookings, jobs, invoices });
           return (
@@ -81,7 +81,7 @@ export function TelecallerPanel({ telecallers, leads, services, technicians, cus
         })()}
       </section>
 
-      <section className="panel">
+      <section className="panel telecaller-tabs-panel">
         <div className="row-actions">
           <button className={tab === "leads" ? "primary-btn small" : "ghost-btn small"} onClick={() => setTab("leads")}>Leads</button>
           <button className={tab === "booking" ? "primary-btn small" : "ghost-btn small"} onClick={() => setTab("booking")}>New Booking</button>

@@ -131,13 +131,34 @@ export function BusinessSettingsPage({ settings, language, setLanguage, onUpdate
 
   return (
     <>
-      <section className="page-head">
+      <section className="page-head business-page-head">
         <h2>Business Settings</h2>
         <p>Set business details and GST settings shown on invoices.</p>
       </section>
 
-      <section className="panel">
+      <section className="business-summary-strip">
+        <div className="business-summary-card">
+          <span>Business</span>
+          <strong>{form.business_name || "AquaBiz"}</strong>
+        </div>
+        <div className="business-summary-card">
+          <span>UPI</span>
+          <strong>{form.upi_id ? "Ready" : "Missing"}</strong>
+        </div>
+        <div className="business-summary-card">
+          <span>Bank</span>
+          <strong>{form.bank_name ? "Added" : "Pending"}</strong>
+        </div>
+        <div className="business-summary-card">
+          <span>Logo</span>
+          <strong>{form.logo_url ? "Uploaded" : "Not Set"}</strong>
+        </div>
+      </section>
+
+      <section className="panel business-settings-panel">
         <div className="form-stack">
+          <section className="business-section-card">
+            <h3>Business Profile</h3>
           <FormCard label="Business Name">
             <input value={form.business_name} onChange={(e) => setForm({ ...form, business_name: e.target.value })} />
           </FormCard>
@@ -164,8 +185,9 @@ export function BusinessSettingsPage({ settings, language, setLanguage, onUpdate
           <FormCard label="Business Address">
             <textarea rows={3} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
           </FormCard>
+          </section>
 
-          <section className="sub-panel">
+          <section className="sub-panel business-section-card">
             <h3>UPI Payment Details</h3>
             <div className="two-col">
               <FormCard label="UPI ID">
@@ -177,7 +199,7 @@ export function BusinessSettingsPage({ settings, language, setLanguage, onUpdate
             </div>
           </section>
 
-          <section className="sub-panel">
+          <section className="sub-panel business-section-card">
             <h3>Bank Account Details</h3>
             <div className="two-col">
               <FormCard label="Bank Name">
@@ -200,6 +222,8 @@ export function BusinessSettingsPage({ settings, language, setLanguage, onUpdate
             </FormCard>
           </section>
 
+          <section className="business-section-card">
+            <h3>GST & Invoice</h3>
           <div className="two-col">
             <FormCard label="GST Number">
               <input value={form.gst_number} onChange={(e) => setForm({ ...form, gst_number: e.target.value })} />
@@ -228,7 +252,10 @@ export function BusinessSettingsPage({ settings, language, setLanguage, onUpdate
           <FormCard label="Invoice Prefix">
             <input value={form.invoice_prefix} onChange={(e) => setForm({ ...form, invoice_prefix: e.target.value })} />
           </FormCard>
+          </section>
 
+          <section className="business-section-card">
+            <h3>App Preferences</h3>
           <FormCard label="App Language">
             <div className="chip-grid">
               <button className={form.app_language === "en" ? "chip active" : "chip"} type="button" onClick={() => setForm({ ...form, app_language: "en" })}>English</button>
@@ -241,6 +268,7 @@ export function BusinessSettingsPage({ settings, language, setLanguage, onUpdate
           <FormCard label="Invoice Terms">
             <textarea rows={3} value={form.terms} onChange={(e) => setForm({ ...form, terms: e.target.value })} />
           </FormCard>
+          </section>
 
           {message && <div className={message.includes("saved") ? "success-box" : "error-box"}>{message}</div>}
 

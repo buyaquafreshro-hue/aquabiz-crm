@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { supabase } from "../supabaseClient";
 
-export function TopBar({ title, onRefresh, loading, language, setLanguage, authUser, businessSettings, onLocalLogout, onBackup, onRestore }) {
+export function TopBar({ title, onRefresh, loading, language, setLanguage, authUser, onLocalLogout, onBackup, onRestore }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const isLimitedRole = authUser?.id === "technician-mode" || authUser?.id === "telecaller-mode" || authUser?.id === "sales-mode";
 
@@ -18,15 +18,18 @@ export function TopBar({ title, onRefresh, loading, language, setLanguage, authU
   return (
     <header className="topbar compact-topbar">
       <div className="brand">
-        <span className="brand-icon">💧</span>
+        <span className="brand-icon">A</span>
         <div>
           <strong>{title}</strong>
         </div>
       </div>
 
       <div className="topbar-menu-wrap">
+        <button className="notification-btn" type="button" onClick={() => onRefresh?.()} title="Refresh">
+          {loading ? "..." : "!"}
+        </button>
         <button className="menu-trigger" type="button" onClick={() => setMenuOpen(!menuOpen)}>
-          ☰ Menu
+          Menu
         </button>
 
         {menuOpen && (
@@ -35,7 +38,7 @@ export function TopBar({ title, onRefresh, loading, language, setLanguage, authU
               Language
               <select value={language} onChange={(e) => setLanguage(e.target.value)}>
                 <option value="en">English</option>
-                <option value="hi">हिंदी</option>
+                <option value="hi">Hindi</option>
                 <option value="hinglish">Hinglish</option>
               </select>
             </label>
@@ -46,10 +49,12 @@ export function TopBar({ title, onRefresh, loading, language, setLanguage, authU
               Contact / Help
             </button>
 
-            {!isLimitedRole && <label className="dropdown-upload">
-              Restore
-              <input type="file" accept="application/json" hidden onChange={(e) => { onRestore?.(e); setMenuOpen(false); }} />
-            </label>}
+            {!isLimitedRole && (
+              <label className="dropdown-upload">
+                Restore
+                <input type="file" accept="application/json" hidden onChange={(e) => { onRestore?.(e); setMenuOpen(false); }} />
+              </label>
+            )}
 
             <button type="button" onClick={() => { onRefresh?.(); setMenuOpen(false); }}>
               {loading ? "Loading..." : "Refresh"}

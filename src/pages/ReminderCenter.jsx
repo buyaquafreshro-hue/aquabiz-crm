@@ -163,12 +163,12 @@ export function ReminderCenter({ coverages, invoices, leads, onUpdated }) {
 
   return (
     <>
-      <section className="page-head">
+      <section className="page-head reminders-page-head">
         <h2>Reminder Center</h2>
         <p>AMC, warranty, EMI, payment, and lead follow-ups.</p>
       </section>
 
-      <section className="cards-grid">
+      <section className="cards-grid reminders-stats-grid">
         <StatCard icon="S" label="Service Due" value={serviceReminders.length} />
         <StatCard icon="E" label="EMI Due" value={emiReminders.length} />
         <StatCard icon="R" label="Rent Due" value={rentReminders.length} />
@@ -178,10 +178,10 @@ export function ReminderCenter({ coverages, invoices, leads, onUpdated }) {
 
       {message && <section className={message.includes("updated") || message.includes("rescheduled") ? "success-box" : "error-box"}>{message}</section>}
 
-      <section className="panel">
+      <section className="panel reminders-list-panel">
         <h3>Due Reminders</h3>
         {reminders.length === 0 ? <p className="muted">No reminders due.</p> : reminders.map((reminder) => (
-          <div className="job-card" key={reminder.id}>
+          <div className="job-card reminder-card" key={reminder.id}>
             <div className="booking-card-head">
               <div>
                 <strong>{reminder.customer_name}</strong>

@@ -102,8 +102,8 @@ export function AmcSalePage({ amcPlans, products, coverages, invoices, salesPers
 
   return (
     <>
-      <section className="page-head"><h2>AMC / New Sale</h2><p>Select a plan/product, auto-pick price, apply discount, and activate coverage automatically.</p></section>
-      <section className="panel">
+      <section className="page-head amc-sale-page-head"><h2>AMC / New Sale</h2><p>Select a plan/product, auto-pick price, apply discount, and activate coverage automatically.</p></section>
+      <section className="panel amc-sale-form-panel">
         <FormCard label="Invoice Type">
           <div className="chip-grid">
             <button className={form.type === "amc" ? "chip active" : "chip"} type="button" onClick={() => setForm({ ...form, type: "amc" })}>AMC</button>
@@ -179,7 +179,7 @@ export function AmcSalePage({ amcPlans, products, coverages, invoices, salesPers
           <button className="primary-btn big" onClick={createActivation}>Generate Invoice + Activate</button>
         </div>
       </section>
-      <section className="panel"><h3>Active Coverages</h3>{coverages.length === 0 ? <p className="muted">No active records.</p> : coverages.slice(0, 8).map((c) => <div className="job-card" key={c.id}><strong>{c.customer_name}</strong><p>{c.mobile} • {c.source_name}</p><p>Activation: {c.activation_date} | Expiry: {c.expiry_date}</p><p>Reminder: {c.next_service_due_date}</p><p>Visits: {c.used_visits}/{c.free_visits}</p></div>)}</section>
+      <section className="panel amc-coverages-panel"><h3>Active Coverages</h3>{coverages.length === 0 ? <p className="muted">No active records.</p> : coverages.slice(0, 8).map((c) => <div className="job-card coverage-card" key={c.id}><strong>{c.customer_name}</strong><p>{c.mobile} • {c.source_name}</p><p>Activation: {c.activation_date} | Expiry: {c.expiry_date}</p><p>Reminder: {c.next_service_due_date}</p><p>Visits: {c.used_visits}/{c.free_visits}</p></div>)}</section>
     </>
   );
 }

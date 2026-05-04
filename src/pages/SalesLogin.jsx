@@ -42,11 +42,11 @@ export function SalesLogin({ salesPersons = [], invoices = [], onLogout }) {
   if (!salesPerson) {
     return (
       <>
-        <section className="page-head">
+        <section className="page-head sales-page-head">
           <h2>Sales Login</h2>
           <p>Sales person logs in using mobile number and 6-digit PIN.</p>
         </section>
-        <section className="panel">
+        <section className="panel sales-login-panel">
           <div className="form-stack">
             <input placeholder="Sales mobile number" inputMode="numeric" value={login.mobile} onChange={(e) => setLogin({ ...login, mobile: e.target.value })} />
             <input placeholder="6 digit PIN" inputMode="numeric" maxLength="6" type="password" value={login.pin} onChange={(e) => setLogin({ ...login, pin: e.target.value })} />
@@ -62,25 +62,25 @@ export function SalesLogin({ salesPersons = [], invoices = [], onLogout }) {
 
   return (
     <>
-      <section className="page-head">
+      <section className="page-head sales-page-head">
         <h2>Sales Dashboard</h2>
         <p>Logged in: {salesPerson.name} ({salesPerson.mobile})</p>
       </section>
 
-      <section className="cards-grid">
+      <section className="cards-grid sales-stats-grid">
         <div className="stat-card premium-stat"><strong>{formatINR(stats.todaySales)}</strong><small>Today Sales Amount</small></div>
         <div className="stat-card premium-stat"><strong>{formatINR(stats.monthSales)}</strong><small>This Month Sales</small></div>
         <div className="stat-card premium-stat"><strong>{formatINR(stats.monthIncentive)}</strong><small>This Month Incentive</small></div>
         <div className="stat-card premium-stat"><strong>{stats.salesCount}</strong><small>Number of Sales</small></div>
       </section>
 
-      <section className="panel">
+      <section className="panel sales-list-panel">
         <div className="panel-head">
           <h3>My Sales</h3>
           <button className="ghost-btn small" onClick={logout}>Logout</button>
         </div>
         {stats.ownInvoices.length === 0 ? <p className="muted">No sales invoices linked yet.</p> : stats.ownInvoices.map((invoice) => (
-          <div className="job-card" key={invoice.id}>
+          <div className="job-card sales-invoice-card" key={invoice.id}>
             <strong>{invoice.customer_name}</strong>
             <p>{invoice.mobile} - {invoice.invoice_type}</p>
             <p>Amount: {formatINR(invoice.total_amount)} | Paid: {formatINR(invoice.paid_amount)}</p>

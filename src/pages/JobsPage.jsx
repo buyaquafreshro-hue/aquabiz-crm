@@ -3,16 +3,55 @@ import { InvoiceBuilder } from "../components/InvoiceBuilder";
 import { BookingMini } from "../components/shared";
 import { saveJobAssignment } from "../services/jobAssignments";
 import { supabase } from "../supabaseClient";
-import { getBookingPriority, getCustomerCoverageStatus, isCompletedStatus } from "../utils/appUtils";
+import { formatINR, getBookingPriority, getCustomerCoverageStatus } from "../utils/appUtils";
 import { getCompletionTime, isOpenJobStatus, isRecentCompletedJob } from "../utils/roleDashboard";
-export function JobsPage({ bookings, jobs, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, onUpdated }) {
+
+function priorityClass(priority) {
+  return priority === "Critical" || priority === "High" ? "urgent" : "";
+}
+
+function jobTone(status) {
+  const value = String(status || "").toLowerCase();
+  if (value.includes("progress")) return "progress";
+  if (value.includes("completed")) return "done";
+  if (value.includes("assigned")) return "assigned";
+  return "open";
+}
+
+function JobMeta({ booking }) {
+  return (
+    <div className="dispatch-meta">
+      <div><span>Location</span><strong>{booking?.address || "Address not added"}</strong></div>
+      <div><span>Service</span><strong>{booking?.service_type || "Service"}</strong></div>
+      <div><span>Amount</span><strong>{formatINR(booking?.booking_amount)}</strong></div>
+    </div>
+  );
+}
+
+export function JobsPage({ bookings, jobs, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, onUpdated, setPage }) {
   const [selectedTech, setSelectedTech] = useState({});
   const [invoiceJobId, setInvoiceJobId] = useState(null);
-  const [openUnassignedId, setOpenUnassignedId] = useState(null);
-  const [openJobId, setOpenJobId] = useState(null);
+  const [openId, setOpenId] = useState(null);
+  const [tab, setTab] = useState("all");
   const assignedBookingIds = new Set(jobs.map((j) => String(j.booking_id)));
   const unassignedBookings = bookings.filter((b) => !assignedBookingIds.has(String(b.id)) && isOpenJobStatus(b.status || b.job_status || ""));
   const openJobs = jobs.filter((job) => isOpenJobStatus(job.status));
+
+  const dispatchRows = [
+    ...unassignedBookings.map((booking) => ({ type: "unassigned", booking, job: null, tech: null })),
+    ...openJobs.map((job) => {
+      const booking = bookings.find((b) => String(b.id) === String(job.booking_id));
+      const tech = technicians.find((t) => String(t.id) === String(job.technician_id));
+      return { type: "assigned", booking, job, tech };
+    }).filter((row) => row.booking),
+  ];
+
+  const visibleRows = dispatchRows.filter((row) => {
+    if (tab === "unassigned") return row.type === "unassigned";
+    if (tab === "assigned") return row.type === "assigned";
+    if (tab === "completed") return false;
+    return true;
+  });
 
   async function assignJob(bookingId) {
     const technicianId = selectedTech[bookingId];
@@ -41,97 +80,104 @@ export function JobsPage({ bookings, jobs, technicians, technicianParts = [], in
 
   return (
     <>
-      <section className="page-head"><h2>Jobs & Assignment</h2><p>Assign unassigned bookings and generate invoices for completed jobs.</p></section>
-
-      <section className="panel">
-        <h3>Unassigned Bookings</h3>
-        {unassignedBookings.length === 0 ? <p className="muted">No unassigned bookings.</p> : unassignedBookings.map((b) => {
-          const isOpen = String(openUnassignedId) === String(b.id);
-          const coverageStatus = getCustomerCoverageStatus(b.mobile, coverages);
-
-          return (
-            <div className="job-card" key={b.id}>
-              <button
-                className="booking-card-head compact-click"
-                type="button"
-                onClick={() => setOpenUnassignedId(isOpen ? null : b.id)}
-              >
-                <div>
-                  <strong>{b.customer_name}</strong>
-                  <p>{isOpen ? "Hide details" : "Click to view details"}</p>
-                </div>
-                <div className="row-actions no-margin">
-                  <span className="status unassigned">Unassigned</span>
-                  <span className="status assigned">{coverageStatus}</span>
-                </div>
-              </button>
-
-              {isOpen && (
-                <>
-                  <BookingMini booking={b} />
-                  {b.close_otp && (
-                    <div className="row-actions">
-                      <a className="ghost-btn small" href={`https://wa.me/91${b.mobile}?text=${encodeURIComponent(`AquaBiz job closing OTP: ${b.close_otp}. Share this OTP after work is completed.`)}`} target="_blank" rel="noreferrer">Send Close OTP</a>
-                    </div>
-                  )}
-                  <select value={selectedTech[b.id] || ""} onChange={(e) => setSelectedTech({ ...selectedTech, [b.id]: e.target.value })}>
-                    <option value="">Select Technician</option>{technicians.filter((t) => t.is_active !== false).map((t) => <option value={t.id} key={t.id}>{t.name} ({t.mobile})</option>)}
-                  </select>
-                  <button className="primary-btn" onClick={() => assignJob(b.id)}>Assign Technician</button>
-                </>
-              )}
-            </div>
-          );
-        })}
+      <section className="jobs-dispatch-head">
+        <div>
+          <p>Service Operations</p>
+          <h2>Jobs Dispatch</h2>
+        </div>
+        <button className="primary-btn" onClick={() => setPage?.("booking")}>New Booking</button>
       </section>
 
-      <section className="panel">
-        <h3>Assigned Open Jobs</h3>
-        {openJobs.length === 0 ? <p className="muted">No open assigned jobs.</p> : openJobs.map((job) => {
-          const booking = bookings.find((b) => String(b.id) === String(job.booking_id));
-          const tech = technicians.find((t) => String(t.id) === String(job.technician_id));
-          const hasInvoice = invoices.some((i) => String(i.booking_id) === String(job.booking_id));
-          const isOpen = String(openJobId) === String(job.id);
+      <section className="jobs-tabs">
+        <button className={tab === "all" ? "active" : ""} onClick={() => setTab("all")}>All Jobs ({dispatchRows.length})</button>
+        <button className={tab === "unassigned" ? "active" : ""} onClick={() => setTab("unassigned")}>Unassigned ({unassignedBookings.length})</button>
+        <button className={tab === "assigned" ? "active" : ""} onClick={() => setTab("assigned")}>Assigned ({openJobs.length})</button>
+        <button className={tab === "completed" ? "active" : ""} onClick={() => setTab("completed")}>Completed (24h)</button>
+      </section>
+
+      <section className="jobs-grid">
+        {visibleRows.map(({ type, booking, job, tech }) => {
+          const priority = getBookingPriority(booking);
           const coverageStatus = getCustomerCoverageStatus(booking?.mobile, coverages);
+          const hasInvoice = job && invoices.some((i) => String(i.booking_id) === String(job.booking_id));
+          const isOpen = String(openId) === String(job?.id || booking.id);
+          const key = job?.id || booking.id;
 
           return (
-            <div className="job-card" key={job.id}>
-              <button
-                className="booking-card-head compact-click"
-                type="button"
-                onClick={() => setOpenJobId(isOpen ? null : job.id)}
-              >
+            <article className={`dispatch-card ${type} ${jobTone(job?.status)} ${priorityClass(priority)}`} key={key}>
+              <div className="dispatch-card-top">
                 <div>
-                  <strong>{booking?.customer_name || "Booking not found"}</strong>
-                  <p>{isOpen ? "Hide details" : `${tech?.name || "Unknown technician"} - ${job.status}`}</p>
+                  <div className="dispatch-customer">
+                    <span>C</span>
+                    <h3>{booking.customer_name}</h3>
+                  </div>
+                  <p>{booking.service_type}</p>
                 </div>
-                <div className="row-actions no-margin">
-                  <span className="status assigned">{job.status}</span>
-                  <span className="status assigned">{coverageStatus}</span>
+                <span className={`dispatch-pill ${priorityClass(priority)}`}>{type === "unassigned" ? priority : job.status}</span>
+              </div>
+
+              <JobMeta booking={booking} />
+
+              <div className="dispatch-tags">
+                <span>{coverageStatus}</span>
+                <span>{booking.mobile}</span>
+              </div>
+
+              {type === "unassigned" ? (
+                <div className="dispatch-actions">
+                  <select value={selectedTech[booking.id] || ""} onChange={(e) => setSelectedTech({ ...selectedTech, [booking.id]: e.target.value })}>
+                    <option value="">Select Technician</option>
+                    {technicians.filter((t) => t.is_active !== false).map((t) => <option value={t.id} key={t.id}>{t.name} ({t.mobile})</option>)}
+                  </select>
+                  <button className="primary-btn" onClick={() => assignJob(booking.id)}>Assign Technician</button>
                 </div>
-              </button>
+              ) : (
+                <div className="dispatch-tech-row">
+                  <div className="dispatch-avatar">{String(tech?.name || "T").slice(0, 1).toUpperCase()}</div>
+                  <div>
+                    <span>Assigned To</span>
+                    <strong>{tech?.name || "Unknown technician"}</strong>
+                  </div>
+                  <button className="link-btn" onClick={() => setOpenId(isOpen ? null : key)}>{isOpen ? "Hide" : "Details"}</button>
+                </div>
+              )}
+
+              {type === "unassigned" && (
+                <button className="ghost-btn" onClick={() => setOpenId(isOpen ? null : key)}>{isOpen ? "Hide Details" : "View Details"}</button>
+              )}
 
               {isOpen && (
-                <>
-                  {booking ? <BookingMini booking={booking} /> : <p className="muted">Booking not found</p>}
-                  <p><strong>Technician:</strong> {tech?.name || "Unknown technician"}</p>
-                  <p><strong>Customer Type:</strong> {coverageStatus}</p>
-                  <div className="row-actions">
-                    {["Assigned", "In Progress", "Completed"].map((s) => <button key={s} className="ghost-btn small" onClick={() => updateStatus(job, s)}>{s}</button>)}
-                    {booking?.close_otp && <a className="ghost-btn small" href={`https://wa.me/91${booking.mobile}?text=${encodeURIComponent(`AquaBiz job closing OTP: ${booking.close_otp}. Share this OTP after work is completed.`)}`} target="_blank" rel="noreferrer">Send Close OTP</a>}
-                    {!hasInvoice && <button className="primary-btn small" onClick={() => setInvoiceJobId(invoiceJobId === job.id ? null : job.id)}>Generate Invoice</button>}
-                    {hasInvoice && <span className="status assigned">Invoice Generated</span>}
-                  </div>
-                  {invoiceJobId === job.id && (
-                    <InvoiceBuilder job={job} booking={booking} inventory={inventory} technicianParts={technicianParts} coverages={coverages} invoices={invoices}
-                      amcPlans={amcPlans}
-                      products={products} salesPersons={salesPersons} businessSettings={businessSettings} onClose={() => setInvoiceJobId(null)} onDone={async () => { setInvoiceJobId(null); await onUpdated(); }} />
+                <section className="dispatch-detail">
+                  <BookingMini booking={booking} />
+                  {booking.close_otp && (
+                    <a className="ghost-btn small" href={`https://wa.me/91${booking.mobile}?text=${encodeURIComponent(`AquaBiz job closing OTP: ${booking.close_otp}. Share this OTP after work is completed.`)}`} target="_blank" rel="noreferrer">Send Close OTP</a>
                   )}
-                </>
+
+                  {job && (
+                    <>
+                      <div className="row-actions">
+                        {["Assigned", "In Progress", "Completed"].map((s) => <button key={s} className="ghost-btn small" onClick={() => updateStatus(job, s)}>{s}</button>)}
+                        {!hasInvoice && <button className="primary-btn small" onClick={() => setInvoiceJobId(invoiceJobId === job.id ? null : job.id)}>Generate Invoice</button>}
+                        {hasInvoice && <span className="status assigned">Invoice Generated</span>}
+                      </div>
+                      {invoiceJobId === job.id && (
+                        <InvoiceBuilder job={job} booking={booking} inventory={inventory} technicianParts={technicianParts} coverages={coverages} invoices={invoices}
+                          amcPlans={amcPlans}
+                          products={products} salesPersons={salesPersons} businessSettings={businessSettings} onClose={() => setInvoiceJobId(null)} onDone={async () => { setInvoiceJobId(null); await onUpdated(); }} />
+                      )}
+                    </>
+                  )}
+                </section>
               )}
-            </div>
+            </article>
           );
         })}
+
+        <button className="dispatch-create-card" onClick={() => setPage?.("booking")}>
+          <span>+</span>
+          <strong>Create New Job</strong>
+          <p>Manually enter a customer booking request</p>
+        </button>
       </section>
     </>
   );
@@ -195,42 +241,44 @@ export function JobListPage({ title, type, bookings, jobs, technicians, coverage
         </div>
       </section>
 
-      <section className="panel">
-        <div className="section-head">
-          <div>
-            <h3>{title}</h3>
-            <p>{filtered.length} jobs found</p>
-          </div>
-          <button className="link-btn" onClick={() => setPage("jobs")}>Jobs & Assignment</button>
-        </div>
-
+      <section className="jobs-grid">
         {filtered.length === 0 ? <p className="muted">No jobs found.</p> : filtered.map(({ job, booking, technician, coverageStatus, currentPriority }) => {
           const isOpen = String(openId) === String(job.id);
 
           return (
-            <div className="job-card" key={job.id}>
-              <button className="booking-card-head compact-click" type="button" onClick={() => setOpenId(isOpen ? null : job.id)}>
+            <article className={`dispatch-card assigned ${jobTone(job.status)} ${priorityClass(currentPriority)}`} key={job.id}>
+              <div className="dispatch-card-top">
                 <div>
-                  <strong>{booking.customer_name}</strong>
-                  <p>{isOpen ? "Hide details" : `${booking.mobile} - ${booking.service_type}`}</p>
+                  <div className="dispatch-customer">
+                    <span>C</span>
+                    <h3>{booking.customer_name}</h3>
+                  </div>
+                  <p>{booking.service_type}</p>
                 </div>
-                <div className="row-actions no-margin">
-                  <span className={currentPriority === "Critical" ? "status unassigned" : "status assigned"}>{currentPriority}</span>
-                  <span className="status assigned">{coverageStatus}</span>
+                <span className={`dispatch-pill ${priorityClass(currentPriority)}`}>{type === "completed" ? "Completed" : currentPriority}</span>
+              </div>
+              <JobMeta booking={booking} />
+              <div className="dispatch-tags">
+                <span>{coverageStatus}</span>
+                <span>{job.status}</span>
+              </div>
+              <div className="dispatch-tech-row">
+                <div className="dispatch-avatar">{String(technician?.name || "T").slice(0, 1).toUpperCase()}</div>
+                <div>
+                  <span>Assigned To</span>
+                  <strong>{technician?.name || "Not found"}</strong>
                 </div>
-              </button>
-
+                <button className="link-btn" onClick={() => setOpenId(isOpen ? null : job.id)}>{isOpen ? "Hide" : "Details"}</button>
+              </div>
               {isOpen && (
-                <>
+                <section className="dispatch-detail">
                   <BookingMini booking={booking} />
-                  <p><strong>Technician:</strong> {technician?.name || "Not found"} {technician?.mobile ? `- ${technician.mobile}` : ""}</p>
-                  <p><strong>Status:</strong> {job.status}</p>
                   {type === "completed" && <p><strong>Completed:</strong> {getCompletionTime(job, booking) || "Recently"}</p>}
                   <p><strong>Priority:</strong> {currentPriority}</p>
-                  <p><strong>Customer Type:</strong> {coverageStatus}</p>
-                </>
+                  <button className="ghost-btn small" onClick={() => setPage("jobs")}>Jobs & Assignment</button>
+                </section>
               )}
-            </div>
+            </article>
           );
         })}
       </section>

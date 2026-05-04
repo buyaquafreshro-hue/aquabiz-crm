@@ -5,7 +5,7 @@ export function StatCard({ icon, label, value, onClick }) {
     <>
       <div className="stat-top">
         <span className="stat-icon">{icon}</span>
-        <span className="stat-arrow">→</span>
+        <span className="stat-arrow">View</span>
       </div>
       <strong>{value}</strong>
       <small>{label}</small>
@@ -23,20 +23,53 @@ export function StatCard({ icon, label, value, onClick }) {
   return <div className="stat-card premium-stat">{content}</div>;
 }
 
-export function FormCard({ label, children }) { return <section className="form-card"><label>{label}</label>{children}</section>; }
+export function FormCard({ label, children }) {
+  return <section className="form-card"><label>{label}</label>{children}</section>;
+}
 
 export function BookingRow({ booking, jobs, technicians }) {
   const job = jobs.find((j) => String(j.booking_id) === String(booking.id));
   const tech = technicians.find((t) => String(t.id) === String(job?.technician_id));
-  return <div className="booking-row"><div><strong>{booking.customer_name}</strong><p>{booking.service_type} • {formatINR(booking.booking_amount)} • {booking.mobile}</p></div><span className={job ? "status assigned" : "status unassigned"}>{job ? tech?.name || "Assigned" : "Unassigned"}</span></div>;
+  return (
+    <div className="booking-row">
+      <div>
+        <strong>{booking.customer_name}</strong>
+        <p>{booking.service_type} | {formatINR(booking.booking_amount)} | {booking.mobile}</p>
+      </div>
+      <span className={job ? "status assigned" : "status unassigned"}>{job ? tech?.name || "Assigned" : "Unassigned"}</span>
+    </div>
+  );
 }
 
 export function BookingMini({ booking }) {
   if (!booking) return <p className="muted">Booking not found.</p>;
-  return <div className="booking-mini"><strong>{booking.customer_name}</strong><p>{booking.mobile}</p><p>{booking.service_type} • {formatINR(booking.booking_amount)}</p><p>{booking.address}</p>{booking.complaint_notes && <p><strong>Notes:</strong> {booking.complaint_notes}</p>}</div>;
+  return (
+    <div className="booking-mini">
+      <strong>{booking.customer_name}</strong>
+      <p>{booking.mobile}</p>
+      <p>{booking.service_type} | {formatINR(booking.booking_amount)}</p>
+      <p>{booking.address}</p>
+      {booking.complaint_notes && <p><strong>Notes:</strong> {booking.complaint_notes}</p>}
+    </div>
+  );
 }
 
 export function BottomNav({ page, setPage }) {
-  const items = [["dashboard", "Dashboard", "🏠"], ["booking", "Booking", "➕"], ["jobs", "Jobs", "🧰"], ["sale", "Sale/AMC", "🛡️"], ["settings", "More", "⚙️"]];
-  return <nav className="bottom-nav">{items.map(([key, label, icon]) => <button key={key} className={page === key ? "active" : ""} onClick={() => setPage(key)}><span>{icon}</span><small>{label}</small></button>)}</nav>;
+  const items = [
+    ["dashboard", "Dashboard", "D"],
+    ["customers", "Customers", "C"],
+    ["jobs", "Jobs", "J"],
+    ["collections", "Payments", "P"],
+    ["settings", "More", "M"],
+  ];
+  return (
+    <nav className="bottom-nav">
+      {items.map(([key, label, icon]) => (
+        <button key={key} className={page === key ? "active" : ""} onClick={() => setPage(key)}>
+          <span>{icon}</span>
+          <small>{label}</small>
+        </button>
+      ))}
+    </nav>
+  );
 }

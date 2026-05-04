@@ -30,6 +30,10 @@ const SettingsPage = lazy(() => import("./pages/SettingsPage").then((module) => 
 const NewBooking = lazy(() => import("./pages/NewBooking").then((module) => ({ default: module.NewBooking })));
 const SalesLogin = lazy(() => import("./pages/SalesLogin").then((module) => ({ default: module.SalesLogin })));
 const TechnicianTracking = lazy(() => import("./pages/TechnicianTracking").then((module) => ({ default: module.TechnicianTracking })));
+const PayrollPage = lazy(() => import("./pages/PayrollPage").then((module) => ({ default: module.PayrollPage })));
+const ExpensesPage = lazy(() => import("./pages/ExpensesPage").then((module) => ({ default: module.ExpensesPage })));
+const CashbookPage = lazy(() => import("./pages/CashbookPage").then((module) => ({ default: module.CashbookPage })));
+const EmiManagementPage = lazy(() => import("./pages/EmiManagementPage").then((module) => ({ default: module.EmiManagementPage })));
 
 function PageLoader() {
   return (
@@ -77,6 +81,12 @@ export default function App() {
     businessSettings,
     leads,
     salesPersons,
+    payrollSettings,
+    salaryAdvances,
+    payrollRuns,
+    expenseCategories,
+    expenses,
+    cashbookOpenings,
     dataErrors,
     loading,
     loadAll,
@@ -329,7 +339,7 @@ export default function App() {
         {page === "booking" && <NewBooking services={services} technicians={technicians} customers={customers} initialLead={bookingDraft} onDone={async () => { setBookingDraft(null); await loadAll(); setPage("jobs"); }} />}
         {page === "jobs" && <JobsPage bookings={bookings} jobs={jobs} technicians={technicians} technicianParts={technicianParts} inventory={inventory} coverages={coverages} invoices={invoices}
             amcPlans={amcPlans}
-            products={products} salesPersons={salesPersons} businessSettings={businessSettings} onUpdated={loadAll} />}
+            products={products} salesPersons={salesPersons} businessSettings={businessSettings} onUpdated={loadAll} setPage={setPage} />}
         {page === "openJobs" && <JobListPage title="Open Jobs" type="open" bookings={bookings} jobs={jobs} technicians={technicians} coverages={coverages} setPage={setPage} />}
         {page === "completedJobs" && <JobListPage title="Completed Jobs" type="completed" bookings={bookings} jobs={jobs} technicians={technicians} coverages={coverages} setPage={setPage} />}
         {page === "technicianParts" && <TechnicianPartsPage technicians={technicians} technicianParts={technicianParts} inventory={inventory} onUpdated={loadAll} />}
@@ -343,13 +353,31 @@ export default function App() {
         {page === "collections" && <CollectionsPage invoices={invoices} invoicePayments={invoicePayments} onUpdated={loadAll} />}
         {page === "reminders" && <ReminderCenter coverages={coverages} invoices={invoices} leads={leads} onUpdated={loadAll} />}
         {page === "reports" && <ReportsPage invoices={invoices} invoiceItems={invoiceItems} usage={usage} jobs={jobs} technicians={technicians} bookings={bookings} customers={customers} inventory={inventory} coverages={coverages} leads={leads} initialFilter={reportFilter} />}
-        {page === "customers" && <CustomerHistoryPage mode="list" customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} onCustomerOpen={(mobile) => { setSelectedCustomerMobile(mobile); setPage("customerDetail"); }} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "" }); setPage("booking"); }} />}
-        {page === "customerHistory" && <CustomerHistoryPage mode="search" customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} onCustomerOpen={(mobile) => { setSelectedCustomerMobile(mobile); setPage("customerDetail"); }} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "" }); setPage("booking"); }} />}
-        {page === "customerDetail" && <CustomerHistoryPage mode="detail" initialMobile={selectedCustomerMobile} customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} onBack={() => setPage("customers")} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "" }); setPage("booking"); }} />}
+        {page === "customers" && <CustomerHistoryPage mode="list" customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} businessSettings={businessSettings} onCustomerOpen={(mobile) => { setSelectedCustomerMobile(mobile); setPage("customerDetail"); }} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "" }); setPage("booking"); }} />}
+        {page === "customerHistory" && <CustomerHistoryPage mode="search" customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} businessSettings={businessSettings} onCustomerOpen={(mobile) => { setSelectedCustomerMobile(mobile); setPage("customerDetail"); }} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "" }); setPage("booking"); }} />}
+        {page === "customerDetail" && <CustomerHistoryPage mode="detail" initialMobile={selectedCustomerMobile} customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} businessSettings={businessSettings} onBack={() => setPage("customers")} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "" }); setPage("booking"); }} />}
         {page === "business" && <BusinessSettingsPage settings={businessSettings} language={language} setLanguage={setLanguage} onUpdated={loadAll} />}
         {page === "invoices" && <InvoicesPage invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} businessSettings={businessSettings} onUpdated={loadAll} />}
         {page === "settings" && <SettingsPage services={services} setPage={setPage} onUpdated={loadAll} />}
         {page === "technicianTracking" && <TechnicianTracking technicians={technicians} />}
+        {page === "expenses" && <ExpensesPage expenseCategories={expenseCategories} expenses={expenses} onUpdated={loadAll} />}
+        {page === "cashbook" && <CashbookPage invoices={invoices} invoicePayments={invoicePayments} expenses={expenses} payrollRuns={payrollRuns} cashbookOpenings={cashbookOpenings} onUpdated={loadAll} />}
+        {page === "emi" && <EmiManagementPage invoices={invoices} invoicePayments={invoicePayments} businessSettings={businessSettings} onUpdated={loadAll} />}
+        {page === "payroll" && (
+          <PayrollPage
+            telecallers={telecallers}
+            technicians={technicians}
+            salesPersons={salesPersons}
+            payrollSettings={payrollSettings}
+            salaryAdvances={salaryAdvances}
+            payrollRuns={payrollRuns}
+            bookings={bookings}
+            jobs={jobs}
+            invoices={invoices}
+            businessSettings={businessSettings}
+            onUpdated={loadAll}
+          />
+        )}
         </Suspense>
       </main>
 

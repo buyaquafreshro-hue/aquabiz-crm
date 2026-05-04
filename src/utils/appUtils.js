@@ -64,8 +64,9 @@ export function getPaidAmount(invoice) {
 }
 
 export function getDueAmount(invoice) {
-  const explicitDue = Number(invoice?.due_amount || 0);
-  if (explicitDue) return explicitDue;
+  if (invoice && invoice.due_amount !== undefined && invoice.due_amount !== null && invoice.due_amount !== "") {
+    return Math.max(Number(invoice.due_amount || 0), 0);
+  }
   return Math.max(Number(invoice?.total_amount || 0) - getPaidAmount(invoice), 0);
 }
 

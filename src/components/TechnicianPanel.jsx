@@ -131,12 +131,12 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
   if (!loggedInTech) {
     return (
       <>
-        <section className="page-head">
+        <section className="page-head technician-page-head">
           <h2>Technician App Login</h2>
           <p>Technician logs in using mobile number and 6-digit PIN.</p>
         </section>
 
-        <section className="panel">
+        <section className="panel technician-login-panel">
           <h3>Login</h3>
 
           <div className="form-stack">
@@ -171,12 +171,12 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
 
   return (
     <>
-      <section className="page-head">
+      <section className="page-head technician-page-head">
         <h2>Technician App</h2>
         <p>Logged in: {loggedInTech.name} ({loggedInTech.mobile})</p>
       </section>
 
-      <section className="cards-grid">
+      <section className="cards-grid technician-stats-grid">
         {(() => {
           const stats = calculateTechnicianStats({ technician: loggedInTech, jobs, bookings, invoices });
           return (
@@ -191,7 +191,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
         })()}
       </section>
 
-      <section className="panel">
+      <section className="panel technician-tracking-panel">
         <div className="panel-head">
           <div>
             <h3>Location Tracking</h3>
@@ -207,7 +207,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
         {message && <div className={message.includes("active") || message.includes("stopped") ? "success-box" : "error-box"}>{message}</div>}
       </section>
 
-      <section className="panel">
+      <section className="panel technician-jobs-panel">
         <div className="panel-head">
           <h3>My Jobs</h3>
           <button className="ghost-btn small" onClick={logout}>Logout</button>
@@ -230,7 +230,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
             const hasInvoice = invoices.some((i) => String(i.booking_id) === String(job.booking_id));
 
             return (
-              <div className="job-card" key={job.id}>
+              <div className="job-card technician-job-card" key={job.id}>
                 {booking ? <BookingMini booking={booking} /> : <p className="muted">Booking not found.</p>}
 
                 <p>

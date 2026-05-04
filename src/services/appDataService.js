@@ -23,6 +23,12 @@ export async function fetchAppData() {
     inventoryPurchasesRes,
     leadsRes,
     salesPersonsRes,
+    payrollSettingsRes,
+    salaryAdvancesRes,
+    payrollRunsRes,
+    expenseCategoriesRes,
+    expensesRes,
+    cashbookOpeningsRes,
   ] = await Promise.all([
     supabase.from("services").select("*").order("name", { ascending: true }),
     supabase.from("technicians").select("*").order("name", { ascending: true }),
@@ -45,6 +51,12 @@ export async function fetchAppData() {
     supabase.from("inventory_purchases").select("*").order("restock_date", { ascending: false }),
     supabase.from("leads").select("*").order("created_at", { ascending: false }),
     supabase.from("sales_persons").select("*").order("name", { ascending: true }),
+    supabase.from("employee_salary_settings").select("*").order("employee_name", { ascending: true }),
+    supabase.from("salary_advances").select("*").order("advance_date", { ascending: false }),
+    supabase.from("payroll_runs").select("*").order("month", { ascending: false }),
+    supabase.from("expense_categories").select("*").order("name", { ascending: true }),
+    supabase.from("expenses").select("*").order("expense_date", { ascending: false }),
+    supabase.from("cashbook_openings").select("*").order("cashbook_date", { ascending: false }),
   ]);
 
   const responses = [
@@ -69,6 +81,12 @@ export async function fetchAppData() {
     ["inventory_purchases", inventoryPurchasesRes],
     ["leads", leadsRes],
     ["sales_persons", salesPersonsRes],
+    ["employee_salary_settings", payrollSettingsRes],
+    ["salary_advances", salaryAdvancesRes],
+    ["payroll_runs", payrollRunsRes],
+    ["expense_categories", expenseCategoriesRes],
+    ["expenses", expensesRes],
+    ["cashbook_openings", cashbookOpeningsRes],
   ];
 
   const dataErrors = responses
@@ -107,6 +125,12 @@ export async function fetchAppData() {
     inventoryPurchases: inventoryPurchasesRes.data || [],
     leads: leadsRes.data || [],
     salesPersons: salesPersonsRes.data || [],
+    payrollSettings: payrollSettingsRes.data || [],
+    salaryAdvances: salaryAdvancesRes.data || [],
+    payrollRuns: payrollRunsRes.data || [],
+    expenseCategories: expenseCategoriesRes.data || [],
+    expenses: expensesRes.data || [],
+    cashbookOpenings: cashbookOpeningsRes.data || [],
     dataErrors,
   };
 }

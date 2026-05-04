@@ -138,12 +138,12 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
 
   return (
     <>
-      <section className="page-head">
+      <section className="page-head reports-page-head">
         <h2>{activeTitle}</h2>
         <p>Filtered report for selected date range.</p>
       </section>
 
-      <section className="panel">
+      <section className="panel reports-filter-panel">
         <div className="two-col">
           <div>
             <label className="field-label">From Date</label>
@@ -179,7 +179,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
       </section>
 
       {(filter === "all" || filter === "collection") && (
-        <section className="cards-grid">
+        <section className="cards-grid reports-summary-grid">
           <StatCard icon="🧾" label="Invoices" value={monthInvoices.length} />
           <StatCard icon="💰" label="Total Billing" value={formatINR(total)} />
           <StatCard icon="✅" label="Paid" value={formatINR(paid)} />
@@ -190,7 +190,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
       )}
 
       {(filter === "all" || filter === "new_sale" || filter === "amc") && (
-        <section className="cards-grid">
+        <section className="cards-grid reports-summary-grid">
           <StatCard icon="🛒" label="New RO Collection" value={formatINR(saleInvoices.reduce((s,i)=>s+getPaidAmount(i),0))} />
           <StatCard icon="🛡️" label="AMC Collection" value={formatINR(amcInvoices.reduce((s,i)=>s+getPaidAmount(i),0))} />
           <StatCard icon="🧰" label="Service Collection" value={formatINR(serviceInvoices.reduce((s,i)=>s+getPaidAmount(i),0))} />
@@ -211,7 +211,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
       )}
 
       {filter === "bookings" && (
-        <section className="panel">
+        <section className="panel report-panel">
           <h3>Current Month Bookings</h3>
           {monthBookings.length === 0 ? <p className="muted">No bookings this month.</p> : monthBookings.map((b) => (
             <div className="booking-row" key={b.id}>
@@ -226,7 +226,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
       )}
 
       {filter === "reminders" && (
-        <section className="panel">
+        <section className="panel report-panel">
           <h3>Service Reminders Due</h3>
           {dueReminders.length === 0 ? <p className="muted">No reminders due.</p> : dueReminders.map((r) => (
             <div className="booking-row" key={r.id}>
@@ -244,7 +244,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
       )}
 
       {filter === "low_stock" && (
-        <section className="panel">
+        <section className="panel report-panel">
           <h3>Low Stock Items</h3>
           {lowStockItems.length === 0 ? <p className="muted">No low stock items.</p> : lowStockItems.map((p) => (
             <div className="booking-row" key={p.id}>
@@ -259,7 +259,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
       )}
 
       {filter === "completed_jobs" && (
-        <section className="panel">
+        <section className="panel report-panel">
           <h3>Completed Jobs</h3>
           {completedJobs.length === 0 ? <p className="muted">No completed jobs.</p> : completedJobs.map((job) => {
             const tech = technicians.find((t) => String(t.id) === String(job.technician_id));
@@ -278,7 +278,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
       )}
 
       {filter === "customers" && (
-        <section className="panel">
+        <section className="panel report-panel">
           <h3>Customers</h3>
           {customers.length === 0 ? <p className="muted">No customers.</p> : customers.map((c) => (
             <div className="booking-row" key={c.id}>
@@ -292,7 +292,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
       )}
 
       {filter === "leads" && (
-        <section className="panel">
+        <section className="panel report-panel">
           <h3>Lead Source Report</h3>
           {Object.keys(leadSourceMap).length === 0 ? <p className="muted">No leads found.</p> : Object.entries(leadSourceMap).map(([source, value]) => (
             <div className="booking-row" key={source}>
@@ -307,7 +307,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
       )}
 
       {(filter === "all" || filter === "collection") && (
-        <section className="panel">
+        <section className="panel report-panel">
           <h3>All Invoices</h3>
           {monthInvoices.map((i) => (
             <div className="mini-line" key={i.id}>
@@ -319,7 +319,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
 
       {filter === "all" && (
         <>
-          <section className="panel">
+        <section className="panel report-panel">
             <h3>Parts Used Item-wise</h3>
             {Object.keys(partsMap).length === 0 ? <p className="muted">No parts used this month.</p> : Object.entries(partsMap).map(([name, v]) => (
               <div className="booking-row" key={name}>
@@ -329,7 +329,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
             ))}
           </section>
 
-          <section className="panel">
+          <section className="panel report-panel">
             <h3>Technician Performance</h3>
             {Object.keys(techMap).length === 0 ? <p className="muted">No technician data.</p> : Object.entries(techMap).map(([name, v]) => (
               <div className="booking-row" key={name}>
@@ -339,7 +339,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
             ))}
           </section>
 
-          <section className="panel">
+          <section className="panel report-panel">
             <h3>Service-wise Revenue</h3>
             {Object.keys(serviceMap).length === 0 ? <p className="muted">No service revenue.</p> : Object.entries(serviceMap).map(([name, value]) => (
               <div className="booking-row" key={name}>
@@ -356,7 +356,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
 
 function ReportInvoiceList({ title, invoices }) {
   return (
-    <section className="panel">
+          <section className="panel report-panel">
       <h3>{title}</h3>
       {invoices.length === 0 ? <p className="muted">No data found.</p> : invoices.map((i) => (
         <div className="booking-row" key={i.id}>

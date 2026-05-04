@@ -178,12 +178,12 @@ export function CollectionsPage({ invoices, invoicePayments = [], onUpdated }) {
 
   return (
     <>
-      <section className="page-head">
+      <section className="page-head collections-page-head">
         <h2>Collections</h2>
         <p>Pending payments, EMI reminders, and follow-ups.</p>
       </section>
 
-      <section className="cards-grid">
+      <section className="cards-grid collections-stats-grid">
         <StatCard icon="₹" label="Total Pending" value={formatINR(totalPending)} />
         <StatCard icon="E" label="EMI Due" value={emiDue.length} />
         <StatCard icon="!" label="Overdue" value={overdue.length} />
@@ -192,7 +192,7 @@ export function CollectionsPage({ invoices, invoicePayments = [], onUpdated }) {
 
       {message && <section className={message.includes("saved") ? "success-box" : "error-box"}>{message}</section>}
 
-      <section className="panel">
+      <section className="panel collections-list-panel">
         <h3>Pending Payment List</h3>
         {pendingInvoices.length === 0 ? <p className="muted">No pending payments.</p> : pendingInvoices.map((invoice) => {
           const payments = invoicePayments.filter((payment) => String(payment.invoice_id) === String(invoice.id));

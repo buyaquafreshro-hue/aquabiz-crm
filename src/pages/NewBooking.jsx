@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { emptyBooking } from "../constants/defaults";
-import { FormCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
 import { formatINR, generateOtp, uniqueServices } from "../utils/appUtils";
 import { saveJobAssignment } from "../services/jobAssignments";
+
 export function NewBooking({ services, technicians, customers = [], initialLead = null, telecaller = null, onDone }) {
   const [form, setForm] = useState(emptyBooking);
   const [message, setMessage] = useState("");
@@ -109,28 +109,90 @@ export function NewBooking({ services, technicians, customers = [], initialLead 
 
   return (
     <>
-      <section className="page-head"><h2>New Booking</h2><p>Technician assignment is optional. You can assign later from the Jobs page.</p></section>
-      <section className="form-stack">
-        <FormCard label="Mobile Number">
-          <input name="ro_customer_mobile_new" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} placeholder="Enter customer mobile number" inputMode="numeric" autoComplete="new-password" />
-          {matchedCustomer && <div className="success-box mt-sm">Existing customer found. Name and address auto-filled.</div>}
-        </FormCard>
-        <FormCard label="Customer Name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Customer name" autoComplete="off" /></FormCard>
-        <FormCard label="Service Type">{cleanServices.length === 0 ? <div className="error-box">No services found. Open More → Admin Settings and add service prices.</div> : <div className="chip-grid">{cleanServices.map((s) => <button key={s.id} className={form.serviceId === s.id ? "chip active" : "chip"} onClick={() => setForm({ ...form, serviceId: s.id })} type="button"><span>{s.name}</span><strong>{formatINR(s.price)}</strong></button>)}</div>}</FormCard>
-        <FormCard label="Priority">
-          <div className="chip-grid">
-            {["Normal", "Medium", "High", "Critical"].map((priority) => (
-              <button key={priority} className={form.priority === priority ? "chip active" : "chip"} type="button" onClick={() => setForm({ ...form, priority })}>{priority}</button>
-            ))}
+      <section className="page-head booking-page-head">
+        <h2>New Booking</h2>
+        <p>Schedule a water purifier service for your customer.</p>
+      </section>
+
+      <section className="booking-form-shell">
+        <div className="booking-form-grid">
+          <div className="booking-field-card">
+            <label>Customer Name</label>
+            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Search or type name..." autoComplete="off" />
           </div>
-          <p className="helper">Normal priority auto-upgrades with each passing day until Critical.</p>
-        </FormCard>
-        <FormCard label="Service Address"><textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="House no, street, area, city" rows={3} autoComplete="off" /></FormCard>
-        <FormCard label="Final Service Amount"><div className="amount-box"><strong>{selectedService?.name || "Service"}</strong><strong>{formatINR(serviceAmount)}</strong></div></FormCard>
-        <FormCard label="Technician Assignment Optional"><select value={form.technicianId} onChange={(e) => setForm({ ...form, technicianId: e.target.value })}><option value="">Skip now — assign later from Jobs page</option>{technicians.filter((t) => t.is_active !== false).map((t) => <option value={t.id} key={t.id}>{t.name} ({t.mobile})</option>)}</select></FormCard>
-        <FormCard label="Complaint Notes"><input value={form.complaintNotes} onChange={(e) => setForm({ ...form, complaintNotes: e.target.value })} placeholder="Leakage, low flow, filter change etc." autoComplete="off" /></FormCard>
+
+          <div className="booking-field-card">
+            <label>Mobile Number</label>
+            <div className="mobile-input-line">
+              <span>+91</span>
+              <input name="ro_customer_mobile_new" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} placeholder="98765 43210" inputMode="numeric" autoComplete="new-password" />
+            </div>
+            {matchedCustomer && <p className="success-line mt-sm">Existing customer found. Name and address auto-filled.</p>}
+          </div>
+        </div>
+
+        <div className="booking-field-card">
+          <label>Service Type</label>
+          {cleanServices.length === 0 ? (
+            <div className="error-box">No services found. Open More &gt; Admin Settings and add service prices.</div>
+          ) : (
+            <div className="booking-chip-row">
+              {cleanServices.map((s) => (
+                <button key={s.id} className={form.serviceId === s.id ? "booking-chip active" : "booking-chip"} onClick={() => setForm({ ...form, serviceId: s.id })} type="button">
+                  <span>{s.name}</span>
+                  <strong>{formatINR(s.price)}</strong>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="booking-field-card">
+          <label>Service Address</label>
+          <textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Apartment, Street, Locality, City..." rows={3} autoComplete="off" />
+          <button className="location-link" type="button">Use Current Location</button>
+        </div>
+
+        <div className="booking-form-grid">
+          <div className="booking-field-card">
+            <label>Priority</label>
+            <div className="booking-chip-row compact">
+              {["Normal", "Medium", "High", "Critical"].map((priority) => (
+                <button key={priority} className={form.priority === priority ? "booking-chip active" : "booking-chip"} type="button" onClick={() => setForm({ ...form, priority })}>{priority}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="booking-field-card">
+            <label>Technician Assignment</label>
+            <select value={form.technicianId} onChange={(e) => setForm({ ...form, technicianId: e.target.value })}>
+              <option value="">Skip now - assign later from Jobs page</option>
+              {technicians.filter((t) => t.is_active !== false).map((t) => <option value={t.id} key={t.id}>{t.name} ({t.mobile})</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="booking-payment-card">
+          <label>Service Amount</label>
+          <div className="payment-choice selected">
+            <div>
+              <strong>{selectedService?.name || "Service"}</strong>
+              <p>Final amount can be adjusted while generating invoice.</p>
+            </div>
+            <span>{formatINR(serviceAmount)}</span>
+          </div>
+        </div>
+
+        <div className="booking-field-card">
+          <label>Complaint Notes Optional</label>
+          <input value={form.complaintNotes} onChange={(e) => setForm({ ...form, complaintNotes: e.target.value })} placeholder="Leaking tap, filter change, low flow etc." autoComplete="off" />
+        </div>
+
         {message && <div className={message.includes("error") ? "error-box" : "success-box"}>{message}</div>}
-        <button className="primary-btn big" onClick={saveBooking} disabled={saving}>{saving ? "Saving..." : "Confirm Booking"}</button>
+
+        <button className="primary-btn big booking-confirm-btn" onClick={saveBooking} disabled={saving}>
+          {saving ? "Saving..." : "Confirm Booking"}
+        </button>
       </section>
     </>
   );

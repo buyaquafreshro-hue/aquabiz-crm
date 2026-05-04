@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { emptyTechnicianPart } from "../constants/defaults";
+import { PartsTable } from "../components/PartsTable";
 import { supabase } from "../supabaseClient";
 export function TechnicianPartsPage({ technicians, technicianParts = [], inventory, onUpdated }) {
   const [partForm, setPartForm] = useState(emptyTechnicianPart);
@@ -35,6 +36,17 @@ export function TechnicianPartsPage({ technicians, technicianParts = [], invento
     await onUpdated();
   }
 
+  const assignedRows = technicianParts.map((row) => {
+    const item = inventory.find((part) => String(part.id) === String(row.inventory_item_id));
+    return {
+      ...row,
+      name: row.part_name,
+      category_name: item?.category_name || item?.category || "Uncategorized",
+      stock_qty: row.quantity,
+      low_stock_qty: 0,
+    };
+  });
+
   return (
     <>
       <section className="page-head">
@@ -66,18 +78,19 @@ export function TechnicianPartsPage({ technicians, technicianParts = [], invento
 
       <section className="panel">
         <h3>Assigned Parts</h3>
-        {technicianParts.length === 0 ? <p className="muted">No technician parts assigned.</p> : technicianParts.map((row) => (
-          <div className="job-card" key={row.id}>
-            <div className="booking-card-head">
-              <div>
-                <strong>{row.technician_name}</strong>
-                <p>{row.part_name} x {row.quantity}</p>
-              </div>
-              <span className="status assigned">With Technician</span>
-            </div>
-            {row.notes && <p className="muted">Notes: {row.notes}</p>}
-          </div>
-        ))}
+        <PartsTable
+          items={assignedRows}
+          showStockFilter={false}
+          emptyText="No technician parts assigned."
+          columns={[
+            { key: "technician_name", label: "Technician" },
+            { key: "part_name", label: "Part Name" },
+            { key: "category_name", label: "Category" },
+            { key: "quantity", label: "Qty With Technician", sortValue: (row) => Number(row.quantity || 0), render: (row) => <strong>{row.quantity}</strong> },
+            { key: "notes", label: "Notes", render: (row) => row.notes || "-" },
+          ]}
+          actions={() => <span className="status assigned">With Technician</span>}
+        />
       </section>
     </>
   );

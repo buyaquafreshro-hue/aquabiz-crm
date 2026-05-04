@@ -163,12 +163,12 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
 
   return (
     <>
-      <section className="page-head">
+      <section className="page-head leads-page-head">
         <h2>Leads</h2>
         <p>Manual leads now. Later this can connect with Meta Ads, WhatsApp, and Google Ads.</p>
       </section>
 
-      <section className="panel">
+      <section className="panel leads-form-panel">
         <div className="panel-head">
           <h3>Add Lead</h3>
           {loggedInTelecaller && !showLeadForm && !phoneChecked && <button className="primary-btn small" onClick={() => setShowLeadForm(false)}>Add Lead</button>}
@@ -244,7 +244,7 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel leads-list-panel">
         <div className="section-head">
           <div>
             <h3>Lead List</h3>
@@ -256,7 +256,7 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
           const isOpen = String(openLeadId) === String(lead.id);
           const existingCustomer = customers.find((c) => String(c.mobile || "").replace(/\D/g, "") === String(lead.mobile || "").replace(/\D/g, ""));
           return (
-          <div className="job-card" key={lead.id}>
+          <div className="job-card lead-card" key={lead.id}>
             <button
               className="booking-card-head compact-click"
               type="button"

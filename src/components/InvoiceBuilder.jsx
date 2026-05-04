@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import { FormCard } from "./shared";
+import { PartsTable, StockBadge } from "./PartsTable";
 import { supabase } from "../supabaseClient";
 import { addDays, coverageLabel, formatINR, isActive, itemCoveredByRecord, nextMonthlyDate, todayISO } from "../utils/appUtils";
 import { calculateSalesIncentive } from "../utils/salesUtils";
@@ -11,6 +12,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
   const [discount, setDiscount] = useState("0");
   const [selectedPart, setSelectedPart] = useState("");
   const [qty, setQty] = useState("1");
+  const [partQtyById, setPartQtyById] = useState({});
   const [parts, setParts] = useState([]);
   const [paymentMode, setPaymentMode] = useState("split");
   const [cashAmount, setCashAmount] = useState("0");
@@ -81,16 +83,24 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
   const salesIncentiveAmount = invoiceType === "amc" || invoiceType === "new_sale" ? calculateSalesIncentive(total, selectedSalesPerson) : 0;
   const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(upiName)}&am=${encodeURIComponent(upfrontUpiQrAmount.toFixed(2))}&cu=INR&tn=${encodeURIComponent("AquaBiz Invoice Payment")}`;
 
-  function addPart() {
-    const item = inventory.find((p) => String(p.id) === String(selectedPart));
+  function getTechnicianQty(itemId) {
+    return technicianParts
+      .filter((row) => String(row.technician_id) === String(job?.technician_id) && String(row.inventory_item_id) === String(itemId))
+      .reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+  }
+
+  function addPartItem(item, requestedQty) {
     if (!item) return;
 
-    const requestedQty = Number(qty || 1);
-    const technicianQty = technicianParts
-      .filter((row) => String(row.technician_id) === String(job?.technician_id) && String(row.inventory_item_id) === String(item.id))
-      .reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+    const safeQty = Number(requestedQty || 1);
+    const technicianQty = getTechnicianQty(item.id);
 
-    if (job?.technician_id && technicianQty < requestedQty) {
+    if (safeQty <= 0) {
+      setMessage("Part quantity must be greater than 0.");
+      return;
+    }
+
+    if (job?.technician_id && technicianQty < safeQty) {
       setMessage(`${item.name} is not enough with this technician. Available with technician: ${technicianQty}.`);
       return;
     }
@@ -104,7 +114,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
         inventory_item_id: item.id,
         part_name: item.name,
         category: item.category_name,
-        quantity: requestedQty,
+        quantity: safeQty,
         actual_selling_price: selling,
         billing_price: covered ? 0 : selling,
         is_covered: !!covered,
@@ -114,6 +124,12 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
 
     setSelectedPart("");
     setQty("1");
+    setPartQtyById({ ...partQtyById, [item.id]: "1" });
+  }
+
+  function addPart() {
+    const item = inventory.find((p) => String(p.id) === String(selectedPart));
+    addPartItem(item, qty);
   }
 
   async function createCoverageFromInvoice(invoiceId) {
@@ -511,23 +527,39 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
       )}
 
       <FormCard label="Add Used Part / Extra Accessory">
-        <div className="two-col">
-          <select value={selectedPart} onChange={(e) => setSelectedPart(e.target.value)}>
-            <option value="">Select Part</option>
-            {inventory.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} / {p.category_name} / Stock {p.stock_qty} / {formatINR(p.selling_price)}
-              </option>
-            ))}
-          </select>
-          <input type="number" value={qty} min="1" onChange={(e) => setQty(e.target.value)} />
-        </div>
-        {selectedPartItem && job?.technician_id && (
-          <div className={selectedTechnicianPartQty >= Number(qty || 1) ? "success-box mt-sm" : "error-box mt-sm"}>
-            Technician stock available: {selectedTechnicianPartQty}
-          </div>
+        <PartsTable
+          items={inventory}
+          emptyText="No inventory parts found."
+          columns={[
+            { key: "name", label: "Part Name" },
+            { key: "category_name", label: "Category" },
+            { key: "stock_qty", label: "Shop Stock", sortValue: (item) => Number(item.stock_qty || 0), render: (item) => <strong>{item.stock_qty}</strong> },
+            { key: "tech_stock", label: "Tech Stock", sortValue: (item) => getTechnicianQty(item.id), render: (item) => job?.technician_id ? <strong>{getTechnicianQty(item.id)}</strong> : "-" },
+            { key: "selling_price", label: "Selling", sortValue: (item) => Number(item.selling_price || 0), render: (item) => formatINR(item.selling_price) },
+            { key: "stock_status", label: "Status", render: (item) => <StockBadge item={item} /> },
+          ]}
+          actions={(item) => {
+            const rowQty = partQtyById[item.id] || "1";
+            const techQty = getTechnicianQty(item.id);
+            const blocked = job?.technician_id && techQty < Number(rowQty || 1);
+            return (
+              <div className="part-add-actions">
+                <input
+                  type="number"
+                  min="1"
+                  value={rowQty}
+                  onChange={(e) => setPartQtyById({ ...partQtyById, [item.id]: e.target.value })}
+                />
+                <button className={blocked ? "danger-btn small" : "primary-btn small"} onClick={() => addPartItem(item, rowQty)}>
+                  Add
+                </button>
+              </div>
+            );
+          }}
+        />
+        {selectedPartItem && job?.technician_id && selectedTechnicianPartQty < Number(qty || 1) && (
+          <div className="error-box mt-sm">Technician stock available: {selectedTechnicianPartQty}</div>
         )}
-        <button className="primary-btn" onClick={addPart}>Add Part</button>
       </FormCard>
 
       {parts.length > 0 && (
