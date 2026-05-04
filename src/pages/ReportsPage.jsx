@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import { BookingMini, StatCard } from "../components/shared";
-import { formatINR, getDueAmount, getLocalMonthKey, getPaidAmount, getRecordMonthKey, isActive, isCompletedStatus, todayISO } from "../utils/appUtils";
+import { StatCard } from "../components/shared";
+import { formatINR, getDueAmount, getLocalMonthKey, getPaidAmount, isActive, isCompletedStatus, todayISO } from "../utils/appUtils";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 import { buildWhatsAppUrl, reminderMessage } from "../utils/whatsappUtils";
 export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technicians = [], bookings = [], customers = [], inventory = [], coverages = [], leads = [], initialFilter = "all" }) {
-  const [month, setMonth] = useState(getLocalMonthKey());
   const [filter, setFilter] = useState(initialFilter || "all");
   const [dateRange, setDateRange] = useState({
     from: `${getLocalMonthKey()}-01`,

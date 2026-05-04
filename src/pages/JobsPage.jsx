@@ -5,6 +5,7 @@ import { saveJobAssignment } from "../services/jobAssignments";
 import { supabase } from "../supabaseClient";
 import { formatINR, getBookingPriority, getCustomerCoverageStatus } from "../utils/appUtils";
 import { getCompletionTime, isOpenJobStatus, isRecentCompletedJob } from "../utils/roleDashboard";
+import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 import { buildWhatsAppUrl, closeOtpMessage } from "../utils/whatsappUtils";
 
 function priorityClass(priority) {
@@ -34,6 +35,8 @@ export function JobsPage({ bookings, jobs, technicians, technicianParts = [], in
   const [invoiceJobId, setInvoiceJobId] = useState(null);
   const [openId, setOpenId] = useState(null);
   const [tab, setTab] = useState("all");
+  const [message, setMessage] = useState("");
+  useAutoHideMessage(message, setMessage);
   const assignedBookingIds = new Set(jobs.map((j) => String(j.booking_id)));
   const unassignedBookings = bookings.filter((b) => !assignedBookingIds.has(String(b.id)) && isOpenJobStatus(b.status || b.job_status || ""));
   const openJobs = jobs.filter((job) => isOpenJobStatus(job.status));
@@ -56,9 +59,10 @@ export function JobsPage({ bookings, jobs, technicians, technicianParts = [], in
 
   async function assignJob(bookingId) {
     const technicianId = selectedTech[bookingId];
-    if (!technicianId) return alert("Please select technician.");
+    if (!technicianId) return setMessage("Please select technician.");
     const { error } = await saveJobAssignment(bookingId, technicianId);
-    if (error) return alert(error.message);
+    if (error) return setMessage(error.message);
+    setMessage("Job assigned.");
     await onUpdated();
   }
 
@@ -67,7 +71,7 @@ export function JobsPage({ bookings, jobs, technicians, technicianParts = [], in
     if (status === "Completed" && booking?.close_otp) {
       const entered = window.prompt("Enter customer OTP to close this job");
       if (String(entered || "").trim() !== String(booking.close_otp)) {
-        alert("Wrong OTP. Job not closed.");
+        setMessage("Wrong OTP. Job not closed.");
         return;
       }
       await supabase.from("bookings").update({ close_otp_verified: true }).eq("id", booking.id);
@@ -75,7 +79,8 @@ export function JobsPage({ bookings, jobs, technicians, technicianParts = [], in
 
     const payload = status === "Completed" ? { status, completed_at: new Date().toISOString() } : { status };
     const { error } = await supabase.from("job_assignments").update(payload).eq("id", job.id);
-    if (error) alert(error.message);
+    if (error) return setMessage(error.message);
+    setMessage(status === "Completed" ? "Job completed." : "Job updated.");
     await onUpdated();
   }
 
@@ -95,6 +100,8 @@ export function JobsPage({ bookings, jobs, technicians, technicianParts = [], in
         <button className={tab === "assigned" ? "active" : ""} onClick={() => setTab("assigned")}>Assigned ({openJobs.length})</button>
         <button className={tab === "completed" ? "active" : ""} onClick={() => setTab("completed")}>Completed (24h)</button>
       </section>
+
+      {message && <div className={isSuccessToast(message) ? "settings-toast success" : "settings-toast error"}>{message}</div>}
 
       <section className="jobs-grid">
         {visibleRows.map(({ type, booking, job, tech }) => {

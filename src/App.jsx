@@ -9,6 +9,7 @@ import { useAppData } from "./hooks/useAppData";
 import { useAuthSession } from "./hooks/useAuthSession";
 import { createBackup, downloadBackupFile, restoreBackupData } from "./services/backupService";
 import { calculateDashboardStats } from "./utils/dashboardStats";
+import { isSuccessToast, useAutoHideMessage } from "./utils/toastUtils";
 
 const Dashboard = lazy(() => import("./pages/Dashboard").then((module) => ({ default: module.Dashboard })));
 const JobsPage = lazy(() => import("./pages/JobsPage").then((module) => ({ default: module.JobsPage })));
@@ -50,6 +51,8 @@ export default function App() {
   const [bookingDraft, setBookingDraft] = useState(null);
   const [selectedCustomerMobile, setSelectedCustomerMobile] = useState("");
   const [language, setLanguage] = useState("en");
+  const [globalMessage, setGlobalMessage] = useState("");
+  useAutoHideMessage(globalMessage, setGlobalMessage);
   const handleSignedIn = useCallback(() => {
     setPage("dashboard");
   }, []);
@@ -101,10 +104,10 @@ export default function App() {
     try {
       const backup = await createBackup();
       downloadBackupFile(backup);
-      alert("Backup downloaded successfully.");
+      setGlobalMessage("Backup downloaded successfully.");
     } catch (err) {
       console.error("Backup failed", err);
-      alert("Backup failed. Please check console.");
+      setGlobalMessage("Backup failed. Please check console.");
     }
   }
 
@@ -126,7 +129,7 @@ export default function App() {
       const backup = JSON.parse(text);
 
       if (!backup?.tables) {
-        alert("Invalid AquaBiz backup file.");
+        setGlobalMessage("Invalid AquaBiz backup file.");
         event.target.value = "";
         return;
       }
@@ -136,13 +139,13 @@ export default function App() {
       await loadAll();
 
       if (errors.length) {
-        alert(`Restore completed with some errors.\nRestored records: ${restored}\nErrors:\n${errors.slice(0, 5).join("\n")}`);
+        setGlobalMessage(`Restore completed with some errors. Restored records: ${restored}. ${errors.slice(0, 3).join(" | ")}`);
       } else {
-        alert(`Restore completed successfully.\nRestored records: ${restored}`);
+        setGlobalMessage(`Restore completed successfully. Restored records: ${restored}.`);
       }
     } catch (err) {
       console.error("Restore failed", err);
-      alert("Restore failed. Please check backup file and console.");
+      setGlobalMessage("Restore failed. Please check backup file and console.");
       event.target.value = "";
     }
   }
@@ -316,6 +319,7 @@ export default function App() {
         onBackup={downloadBackup}
           onRestore={restoreBackup}
         />
+      {globalMessage && <div className={isSuccessToast(globalMessage) ? "settings-toast success" : "settings-toast error"}>{globalMessage}</div>}
       <main className="main-content">
         <Suspense fallback={<PageLoader />}>
         {page === "dashboard" && (

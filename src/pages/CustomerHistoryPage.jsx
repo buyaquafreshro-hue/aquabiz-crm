@@ -414,6 +414,7 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
               </div>
               <div className="row-actions">
                 {isDetailMode && <button className="ghost-btn small" onClick={onBack}>Back</button>}
+                <button className="ghost-btn small" onClick={() => window.print()}>Print History</button>
                 <button className="primary-btn small" onClick={() => onCreateBooking?.(selectedCustomer)}>New Booking / Ticket</button>
                 <a className="ghost-btn small" href={`tel:${selectedCustomer.mobile}`}>Call</a>
                 <a className="ghost-btn small" href={customerWhatsAppLink()} target="_blank" rel="noreferrer">WhatsApp</a>

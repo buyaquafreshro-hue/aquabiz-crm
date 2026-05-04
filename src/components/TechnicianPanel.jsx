@@ -112,7 +112,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
     if (status === "Completed" && booking?.close_otp) {
       const entered = window.prompt("Enter customer OTP to close this job");
       if (String(entered || "").trim() !== String(booking.close_otp)) {
-        alert("Wrong OTP. Job not closed.");
+        setMessage("Wrong OTP. Job not closed.");
         return;
       }
       await supabase.from("bookings").update({ close_otp_verified: true }).eq("id", booking.id);
@@ -125,7 +125,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
       .eq("id", job.id);
 
     if (error) {
-      alert(error.message);
+      setMessage(error.message);
       return;
     }
 

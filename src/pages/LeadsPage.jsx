@@ -107,7 +107,8 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
 
   async function updateLeadStatus(lead, status) {
     const { error } = await supabase.from("leads").update({ status }).eq("id", lead.id);
-    if (error) return alert(error.message);
+    if (error) return setMessage(error.message);
+    setMessage(`Lead marked ${status}.`);
     await onUpdated();
   }
 
