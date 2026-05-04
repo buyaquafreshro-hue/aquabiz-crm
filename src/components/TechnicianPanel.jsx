@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { InvoiceBuilder } from "./InvoiceBuilder";
 import { BookingMini } from "./shared";
+import { PartsTable } from "./PartsTable";
 import { supabase } from "../supabaseClient";
 import { formatINR } from "../utils/appUtils";
 import { calculateTechnicianStats, isOpenJobStatus } from "../utils/roleDashboard";
@@ -219,9 +220,16 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
         {myParts.length > 0 && (
           <div className="sub-panel">
             <h3>Parts With Me</h3>
-            {myParts.map((row) => (
-              <div className="mini-line" key={row.id}>{row.part_name} x {row.quantity}</div>
-            ))}
+            <PartsTable
+              items={myParts.map((row) => ({ ...row, name: row.part_name, stock_qty: row.quantity, category_name: "With technician" }))}
+              showStockFilter={false}
+              emptyText="No parts with you."
+              columns={[
+                { key: "part_name", label: "Part" },
+                { key: "quantity", label: "Qty", sortValue: (row) => Number(row.quantity || 0), render: (row) => <strong>{row.quantity}</strong> },
+                { key: "notes", label: "Notes", render: (row) => row.notes || "-" },
+              ]}
+            />
           </div>
         )}
 

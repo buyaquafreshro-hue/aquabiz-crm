@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
 import { BookingMini, StatCard } from "../components/shared";
+import { PartsTable } from "../components/PartsTable";
+import { supabase } from "../supabaseClient";
 import { coverageLabel, formatINR, getDueAmount, getPaidAmount, isActive, isCompletedStatus, normalizeMobile, todayISO } from "../utils/appUtils";
+import { downloadCsv, parseCustomerUploadFile } from "../utils/csvUtils";
+import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 import { buildWhatsAppUrl, customerGreetingMessage, invoiceShareMessage } from "../utils/whatsappUtils";
-export function CustomerHistoryPage({ mode = "search", initialMobile = "", customers, bookings, jobs = [], technicians = [], invoices, invoiceItems, invoicePayments = [], usage = [], coverages, leads = [], businessSettings, onCustomerOpen, onBack, onCreateBooking }) {
+export function CustomerHistoryPage({ mode = "search", initialMobile = "", customers, bookings, jobs = [], technicians = [], invoices, invoiceItems, invoicePayments = [], usage = [], coverages, leads = [], businessSettings, onCustomerOpen, onBack, onCreateBooking, onUpdated }) {
   const [search, setSearch] = useState("");
   const [selectedMobile, setSelectedMobile] = useState(initialMobile || "");
   const [filter, setFilter] = useState("all");
+  const [message, setMessage] = useState("");
+  const [importing, setImporting] = useState(false);
+  useAutoHideMessage(message, setMessage);
   const isListMode = mode === "list";
   const isDetailMode = mode === "detail";
 
@@ -55,6 +62,20 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
   const customerPayments = selectedMobileKey ? invoicePayments.filter((p) => normalizeMobile(p.mobile) === selectedMobileKey) : [];
   const customerInvoiceIds = new Set(customerInvoices.map((invoice) => String(invoice.id)));
   const customerUsage = selectedMobile ? usage.filter((row) => customerInvoiceIds.has(String(row.invoice_id))) : [];
+  const customerUsageRows = customerUsage.map((row) => {
+    const invoice = customerInvoices.find((inv) => String(inv.id) === String(row.invoice_id));
+    const booking = customerBookings.find((b) => String(b.id) === String(row.booking_id || invoice?.booking_id));
+    const job = jobs.find((j) => String(j.booking_id) === String(booking?.id));
+    const technician = technicians.find((t) => String(t.id) === String(row.technician_id || job?.technician_id));
+    return {
+      ...row,
+      invoice_number: invoice?.invoice_number || getInvoiceNumber(invoice || {}, 0),
+      installed_date: invoice?.invoice_date || row.created_at || booking?.created_at || "",
+      technician_name: technician?.name || "Not found",
+      technician_mobile: technician?.mobile || "",
+      address: booking?.address || "",
+    };
+  });
   const customerJobs = customerBookings
     .map((booking) => {
       const job = jobs.find((j) => String(j.booking_id) === String(booking.id));
@@ -145,6 +166,111 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
     return invoiceShareMessage(invoice, items, businessSettings, getInvoiceNumber(invoice, index));
   }
 
+  function customerExportRows() {
+    return customers.map((customer) => {
+      const mobile = normalizeMobile(customer.mobile);
+      const customerInvoiceRows = invoices.filter((invoice) => normalizeMobile(invoice.mobile) === mobile);
+      const customerBookingRows = bookings.filter((booking) => normalizeMobile(booking.mobile) === mobile);
+      const customerCoverageRows = coverages.filter((coverage) => normalizeMobile(coverage.mobile) === mobile);
+      return [
+        customer.name || "",
+        customer.mobile || "",
+        customer.address || "",
+        customer.area || "",
+        customer.created_at || "",
+        customerBookingRows.length,
+        customerInvoiceRows.length,
+        customerInvoiceRows.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0),
+        customerInvoiceRows.reduce((sum, invoice) => sum + getPaidAmount(invoice), 0),
+        customerInvoiceRows.reduce((sum, invoice) => sum + getDueAmount(invoice), 0),
+        customerCoverageRows.filter(isActive).length,
+      ];
+    });
+  }
+
+  function downloadCustomers() {
+    downloadCsv(
+      `aquabiz-customers-${todayISO()}.csv`,
+      ["name", "mobile", "address", "area", "created_at", "bookings", "invoices", "total_billing", "paid", "pending", "active_coverages"],
+      customerExportRows()
+    );
+  }
+
+  function downloadCustomerTemplate() {
+    downloadCsv(
+      "aquabiz-customer-upload-template.csv",
+      ["name", "mobile", "address", "area", "notes"],
+      [["Rahul Sharma", "9876543210", "House no, area, city", "Area name", "Old customer"]]
+    );
+  }
+
+  async function importCustomers(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setMessage("");
+    setImporting(true);
+    try {
+      const rows = await parseCustomerUploadFile(file);
+      const payload = rows
+        .map((row) => {
+          const mobile = normalizeMobile(row.mobile || row.phone || row.contact || row.contact_number);
+          return {
+            name: row.name || row.customer_name || row.full_name || "",
+            mobile,
+            address: row.address || row.customer_address || "",
+            area: row.area || row.locality || "",
+            notes: row.notes || row.note || "",
+          };
+        })
+        .filter((row) => row.name.trim() && /^\d{10}$/.test(row.mobile));
+
+      if (payload.length === 0) {
+        setMessage("No valid customers found. CSV must have name and 10 digit mobile.");
+        return;
+      }
+
+      const uniqueByMobile = Array.from(new Map(payload.map((row) => [row.mobile, row])).values());
+      const mobiles = uniqueByMobile.map((row) => row.mobile);
+      const { data: existingRows, error: findError } = await supabase.from("customers").select("id,mobile").in("mobile", mobiles);
+      if (findError) {
+        setMessage(findError.message);
+        return;
+      }
+      const existingByMobile = new Map((existingRows || []).map((row) => [normalizeMobile(row.mobile), row]));
+      const inserts = [];
+      const updates = [];
+      uniqueByMobile.forEach((row) => {
+        const existing = existingByMobile.get(row.mobile);
+        if (existing?.id) updates.push({ id: existing.id, ...row });
+        else inserts.push(row);
+      });
+
+      if (inserts.length > 0) {
+        const { error } = await supabase.from("customers").insert(inserts);
+        if (error) {
+          setMessage(error.message);
+          return;
+        }
+      }
+
+      for (const row of updates) {
+        const { id, ...payloadRow } = row;
+        const { error } = await supabase.from("customers").update(payloadRow).eq("id", id);
+        if (error) {
+          setMessage(error.message);
+          return;
+        }
+      }
+      setMessage(`${uniqueByMobile.length} customers uploaded successfully.`);
+      await onUpdated?.();
+    } catch (error) {
+      setMessage(error.message || "Customer upload failed.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   function shareInvoiceWhatsApp(invoice, items, index) {
     window.open(buildWhatsAppUrl(invoice.mobile || selectedCustomer?.mobile, invoiceShareText(invoice, items, index)), "_blank");
   }
@@ -186,6 +312,26 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
         <h2>{isDetailMode ? "Customer Details" : isListMode ? "Customers" : "Customer History"}</h2>
         <p>{isDetailMode ? "Complete customer profile, jobs, invoices, installed parts, and lead history." : isListMode ? "Search and open any customer profile." : "Search by mobile number, name, or address to view complete customer history."}</p>
       </section>
+
+      {!isDetailMode && (
+        <section className="panel customer-data-tools">
+          <div className="section-heading-row">
+            <div>
+              <h3>Customer Data</h3>
+              <p className="muted">Old customer CSV upload aur complete customer download.</p>
+            </div>
+            <div className="row-actions">
+              <button className="ghost-btn small" type="button" onClick={downloadCustomerTemplate}>Template CSV</button>
+              <button className="primary-btn small" type="button" onClick={downloadCustomers}>Download Customers</button>
+              <label className="ghost-btn small file-action">
+                {importing ? "Uploading..." : "Upload CSV"}
+                <input type="file" accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={importCustomers} disabled={importing} />
+              </label>
+            </div>
+          </div>
+          {message && <div className={isSuccessToast(message) ? "success-box" : "error-box"}>{message}</div>}
+        </section>
+      )}
 
       {!isDetailMode && <section className="panel">
         <div className="customer-search-wrap">
@@ -342,32 +488,27 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
 
           <section className="panel">
             <h3>Installed Parts / Service Parts</h3>
-            {customerUsage.length === 0 ? <p className="muted">No installed parts found.</p> : customerUsage.map((row) => {
-              const invoice = customerInvoices.find((inv) => String(inv.id) === String(row.invoice_id));
-              const booking = customerBookings.find((b) => String(b.id) === String(row.booking_id || invoice?.booking_id));
-              const job = jobs.find((j) => String(j.booking_id) === String(booking?.id));
-              const technician = technicians.find((t) => String(t.id) === String(row.technician_id || job?.technician_id));
-              const installedDate = invoice?.invoice_date || row.created_at || booking?.created_at;
-
-              return (
-                <div className="job-card" key={row.id}>
-                  <div className="booking-card-head">
-                    <div>
-                      <strong>{row.part_name}</strong>
-                      <p>Qty {row.quantity} | Invoice {invoice?.invoice_number || invoice?.id || "Not found"}</p>
-                    </div>
-                    <span className={row.is_covered ? "status assigned" : "status unassigned"}>
-                      {row.is_covered ? "Covered" : "Paid"}
-                    </span>
-                  </div>
-                  <p>Date: {installedDate ? new Date(installedDate).toLocaleDateString("en-IN") : "Not set"}</p>
-                  <p>Technician: {technician?.name || "Not found"} {technician?.mobile ? `- ${technician.mobile}` : ""}</p>
-                  <p>Billing: {formatINR(row.billing_price)} | Actual: {formatINR(row.actual_selling_price)}</p>
+            <PartsTable
+              items={customerUsageRows}
+              showStockFilter={false}
+              emptyText="No installed parts found."
+              columns={[
+                { key: "part_name", label: "Part" },
+                { key: "quantity", label: "Qty", sortValue: (row) => Number(row.quantity || 0), render: (row) => <strong>{row.quantity}</strong> },
+                { key: "invoice_number", label: "Invoice" },
+                { key: "installed_date", label: "Date", render: (row) => row.installed_date ? new Date(row.installed_date).toLocaleDateString("en-IN") : "Not set" },
+                { key: "technician_name", label: "Technician", render: (row) => `${row.technician_name}${row.technician_mobile ? ` (${row.technician_mobile})` : ""}` },
+                { key: "billing_price", label: "Billing", sortValue: (row) => Number(row.billing_price || 0), render: (row) => formatINR(row.billing_price) },
+                { key: "status", label: "Status", render: (row) => <span className={row.is_covered ? "status assigned" : "status unassigned"}>{row.is_covered ? "Covered" : "Paid"}</span> },
+              ]}
+              renderExpanded={(row) => (
+                <div>
                   {row.covered_reason && <p className="success-line">{row.covered_reason}</p>}
-                  {booking?.address && <p className="muted">Address: {booking.address}</p>}
+                  {row.address && <p className="muted">Address: {row.address}</p>}
+                  <p className="muted">Actual price: {formatINR(row.actual_selling_price)}</p>
                 </div>
-              );
-            })}
+              )}
+            />
           </section>
 
           <section className="panel">
@@ -385,9 +526,24 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
                   </div>
                   <p>Total: {formatINR(inv.total_amount)} | Paid: {formatINR(getPaidAmount(inv))} | Due: {formatINR(getDueAmount(inv))}</p>
                   {inv.payment_method === "emi" && <p className="muted">EMI: {formatINR(inv.emi_monthly_amount)} | Next Due: {inv.emi_next_due_date || "Not set"}</p>}
-                  {items.map((item) => (
-                    <div className="mini-line" key={item.id}>{item.item_name} x {item.quantity} — {formatINR(item.billing_price)}</div>
-                  ))}
+                  <PartsTable
+                    items={items.map((item) => ({
+                      ...item,
+                      name: item.item_name,
+                      stock_qty: item.quantity,
+                      category_name: item.item_type || "invoice",
+                    }))}
+                    showStockFilter={false}
+                    emptyText="No invoice items."
+                    columns={[
+                      { key: "item_name", label: "Item" },
+                      { key: "item_type", label: "Type" },
+                      { key: "quantity", label: "Qty", sortValue: (item) => Number(item.quantity || 0), render: (item) => <strong>{item.quantity}</strong> },
+                      { key: "actual_price", label: "Actual", sortValue: (item) => Number(item.actual_price || 0), render: (item) => formatINR(item.actual_price) },
+                      { key: "billing_price", label: "Billing", sortValue: (item) => Number(item.billing_price || 0), render: (item) => formatINR(item.billing_price) },
+                      { key: "status", label: "Status", render: (item) => <span className={item.is_covered ? "status assigned" : "status unassigned"}>{item.is_covered ? "Covered" : "Chargeable"}</span> },
+                    ]}
+                  />
                   <div className="customer-invoice-actions">
                     <button className="primary-btn small" onClick={() => printCustomerInvoice(inv, items, index)}>View / Print Invoice</button>
                     <button className="ghost-btn small" onClick={() => shareInvoiceWhatsApp(inv, items, index)}>Share WhatsApp</button>

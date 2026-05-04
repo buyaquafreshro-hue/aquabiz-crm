@@ -3539,6 +3539,23 @@ select:focus {
   border: 1px solid rgba(185, 28, 28, .2);
 }
 
+.file-action {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.file-action input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.customer-data-tools .row-actions {
+  flex-wrap: wrap;
+}
+
 .sub-panel {
   border: 1px solid var(--border);
   border-radius: 18px;

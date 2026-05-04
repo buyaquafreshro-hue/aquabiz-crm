@@ -7,6 +7,10 @@ add column if not exists min_down_payment numeric default 0;
 alter table ro_products
 add column if not exists stock_qty numeric default 0;
 
+alter table customers
+add column if not exists area text,
+add column if not exists notes text;
+
 alter table business_settings
 add column if not exists upi_id text,
 add column if not exists upi_name text,

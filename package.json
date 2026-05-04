@@ -15,7 +15,8 @@
     "qrcode.react": "^4.2.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "react-leaflet": "^5.0.0"
+    "react-leaflet": "^5.0.0",
+    "read-excel-file": "^9.0.9"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

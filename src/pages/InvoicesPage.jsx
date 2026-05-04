@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { InvoicePaymentForm } from "./CollectionsPage";
+import { PartsTable } from "../components/PartsTable";
 import { formatINR, todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl } from "../utils/whatsappUtils";
 export function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], businessSettings, onUpdated }) {
@@ -429,12 +430,19 @@ export function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], bus
                 </p>
               )}
 
-              {items.map((item) => (
-                <div className="mini-line" key={item.id}>
-                  {item.item_name} x {item.quantity} — {formatINR(item.billing_price)}
-                  {item.is_covered && <span className="success-line"> Covered</span>}
-                </div>
-              ))}
+              <PartsTable
+                items={items.map((item) => ({ ...item, name: item.item_name, stock_qty: item.quantity, category_name: item.item_type || "invoice" }))}
+                showStockFilter={false}
+                emptyText="No invoice items."
+                columns={[
+                  { key: "item_name", label: "Item" },
+                  { key: "item_type", label: "Type" },
+                  { key: "quantity", label: "Qty", sortValue: (item) => Number(item.quantity || 0), render: (item) => <strong>{item.quantity}</strong> },
+                  { key: "actual_price", label: "Actual", sortValue: (item) => Number(item.actual_price || 0), render: (item) => formatINR(item.actual_price) },
+                  { key: "billing_price", label: "Billing", sortValue: (item) => Number(item.billing_price || 0), render: (item) => formatINR(item.billing_price) },
+                  { key: "status", label: "Status", render: (item) => <span className={item.is_covered ? "status assigned" : "status unassigned"}>{item.is_covered ? "Covered" : "Chargeable"}</span> },
+                ]}
+              />
 
               {payments.length > 0 && (
                 <div className="sub-panel">

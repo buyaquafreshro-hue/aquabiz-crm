@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { BookingMini, StatCard } from "../components/shared";
 import { formatINR, getDueAmount, getLocalMonthKey, getPaidAmount, getRecordMonthKey, isActive, isCompletedStatus, todayISO } from "../utils/appUtils";
+import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 import { buildWhatsAppUrl, reminderMessage } from "../utils/whatsappUtils";
 export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technicians = [], bookings = [], customers = [], inventory = [], coverages = [], leads = [], initialFilter = "all" }) {
   const [month, setMonth] = useState(getLocalMonthKey());
@@ -9,6 +10,8 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
     from: `${getLocalMonthKey()}-01`,
     to: todayISO(),
   });
+  const [message, setMessage] = useState("");
+  useAutoHideMessage(message, setMessage);
 
   useEffect(() => {
     setFilter(initialFilter || "all");
@@ -134,7 +137,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
       `Leads: ${rangeLeads.length}`,
     ].join("\n");
     await navigator.clipboard?.writeText(text);
-    alert("Report summary copied.");
+    setMessage("Report summary copied.");
   }
 
   return (
@@ -143,6 +146,8 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
         <h2>{activeTitle}</h2>
         <p>Filtered report for selected date range.</p>
       </section>
+
+      {message && <div className={isSuccessToast(message) ? "settings-toast success" : "settings-toast error"}>{message}</div>}
 
       <section className="panel reports-filter-panel">
         <div className="two-col">
@@ -174,6 +179,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
           </div>
           <div className="row-actions">
             <button className="primary-btn small" type="button" onClick={downloadCSV}>Download CSV</button>
+            <button className="ghost-btn small" type="button" onClick={() => window.print()}>Print Report</button>
             <button className="ghost-btn small" type="button" onClick={copySummary}>Copy Summary</button>
           </div>
         </div>
