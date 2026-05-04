@@ -70,6 +70,66 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
   const lastBooking = customerBookings[0];
   const latestInvoice = customerInvoices[0];
   const latestPayment = customerPayments[0];
+  const timelineEntries = [
+    ...customerBookings.map((booking) => ({
+      id: `booking-${booking.id}`,
+      date: booking.created_at || booking.booking_date,
+      type: "Booking",
+      title: booking.service_type || "Service booking",
+      detail: `${booking.mobile || ""}${booking.address ? ` | ${booking.address}` : ""}`,
+    })),
+    ...customerJobs.map(({ booking, job, technician }) => ({
+      id: `job-${job.id}`,
+      date: job.completed_at || job.updated_at || booking.created_at,
+      type: isCompletedStatus(job.status) ? "Completed Job" : "Job",
+      title: `${booking.service_type || "Job"} - ${job.status || "Assigned"}`,
+      detail: `Technician: ${technician?.name || "Not assigned"}${technician?.mobile ? ` | ${technician.mobile}` : ""}`,
+    })),
+    ...customerInvoices.map((invoice, index) => ({
+      id: `invoice-${invoice.id}`,
+      date: invoice.invoice_date || invoice.created_at,
+      type: "Invoice",
+      title: `${getInvoiceNumber(invoice, index)} - ${formatINR(invoice.total_amount)}`,
+      detail: `Paid ${formatINR(getPaidAmount(invoice))} | Due ${formatINR(getDueAmount(invoice))} | ${invoice.payment_status || ""}`,
+    })),
+    ...customerPayments.map((payment) => ({
+      id: `payment-${payment.id}`,
+      date: payment.payment_date || payment.created_at,
+      type: "Payment",
+      title: formatINR(Number(payment.cash_amount || 0) + Number(payment.upi_amount || 0)),
+      detail: `Cash ${formatINR(payment.cash_amount)} | UPI ${formatINR(payment.upi_amount)}${payment.note ? ` | ${payment.note}` : ""}`,
+    })),
+    ...customerCoverages.map((coverage) => ({
+      id: `coverage-${coverage.id}`,
+      date: coverage.activation_date || coverage.created_at,
+      type: coverage.source_type === "new_sale" ? "Warranty" : "AMC",
+      title: coverage.source_name || "Coverage activated",
+      detail: `Expiry ${coverage.expiry_date || "Not set"} | Next service ${coverage.next_service_due_date || "Not set"}`,
+    })),
+    ...customerLeads.map((lead) => ({
+      id: `lead-${lead.id}`,
+      date: lead.follow_up_date || lead.created_at,
+      type: "Lead",
+      title: `${lead.interest || lead.service_need || "Lead"} - ${lead.status || "New"}`,
+      detail: `${lead.source || "Manual"}${lead.notes ? ` | ${String(lead.notes).split("\n")[0]}` : ""}`,
+    })),
+    ...customerUsage.map((row) => ({
+      id: `part-${row.id}`,
+      date: row.created_at,
+      type: "Part",
+      title: `${row.part_name} x ${row.quantity}`,
+      detail: `Billing ${formatINR(row.billing_price)}${row.is_covered ? " | Covered" : ""}`,
+    })),
+  ]
+    .filter((entry) => entry.date)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+  function formatTimelineDate(value) {
+    if (!value) return "Date not set";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+    return date.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  }
 
   function customerWhatsAppLink() {
     const mobile = normalizeMobile(selectedMobile);
@@ -241,6 +301,28 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
               <div><span>Last Invoice</span><strong>{latestInvoice ? formatINR(latestInvoice.total_amount) : "None"}</strong></div>
               <div><span>Last Payment</span><strong>{latestPayment ? `${latestPayment.payment_date} • ${formatINR(Number(latestPayment.cash_amount || 0) + Number(latestPayment.upi_amount || 0))}` : "None"}</strong></div>
             </div>
+          </section>
+
+          <section className="panel customer-timeline-panel">
+            <h3>Customer Timeline</h3>
+            <p className="muted">Bookings, jobs, invoices, payments, AMC/warranty, leads, and parts in one date-wise history.</p>
+            {timelineEntries.length === 0 ? <p className="muted">No timeline records found.</p> : (
+              <div className="customer-timeline-list">
+                {timelineEntries.map((entry) => (
+                  <article className="customer-timeline-item" key={entry.id}>
+                    <div className="timeline-dot" />
+                    <div>
+                      <div className="timeline-item-head">
+                        <span>{entry.type}</span>
+                        <small>{formatTimelineDate(entry.date)}</small>
+                      </div>
+                      <strong>{entry.title}</strong>
+                      {entry.detail && <p>{entry.detail}</p>}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
           </section>
 
           <section className="panel">
