@@ -24,6 +24,24 @@ add column if not exists upi_id text,
 add column if not exists sales_person_id uuid,
 add column if not exists sales_incentive_amount numeric default 0;
 
+alter table invoices
+add column if not exists is_emi boolean default false,
+add column if not exists product_price numeric default 0,
+add column if not exists down_payment_total numeric default 0,
+add column if not exists down_payment_cash numeric default 0,
+add column if not exists down_payment_upi numeric default 0,
+add column if not exists emi_amount numeric default 0,
+add column if not exists emi_months integer default 0,
+add column if not exists upfront_upi_qr_amount numeric default 0,
+add column if not exists invoice_print_qr_amount numeric default 0,
+add column if not exists emi_total_amount numeric default 0,
+add column if not exists emi_advance_amount numeric default 0,
+add column if not exists emi_monthly_amount numeric default 0,
+add column if not exists emi_start_date date,
+add column if not exists emi_next_due_date date,
+add column if not exists emi_notes text,
+add column if not exists emi_closed_at timestamptz;
+
 create table if not exists sales_persons (
   id uuid primary key default gen_random_uuid(),
   name text not null,

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { QRCodeCanvas } from "qrcode.react";
 import { InvoicePaymentForm } from "./CollectionsPage";
 import { supabase } from "../supabaseClient";
 import { formatINR, getDueAmount, getLocalMonthKey, nextMonthlyDate, todayISO } from "../utils/appUtils";
@@ -71,6 +72,28 @@ function whatsappLink(invoice) {
   const amount = formatINR(getEmiAmount(invoice));
   const dueDate = invoice.emi_next_due_date || "today";
   const text = encodeURIComponent(`Namaste ${invoice.customer_name || ""}, AquaBiz EMI reminder. EMI Amount: ${amount}. Due Date: ${dueDate}.`);
+  return mobile ? `https://wa.me/91${mobile}?text=${text}` : `https://wa.me/?text=${text}`;
+}
+
+function buildEmiUpiUri(invoice, businessSettings) {
+  const upiId = invoice.upi_id || businessSettings?.upi_id || "";
+  const upiName = businessSettings?.upi_name || businessSettings?.business_name || "AquaBiz";
+  const amount = getEmiAmount(invoice);
+  if (!upiId || amount <= 0) return "";
+  const params = new URLSearchParams({
+    pa: upiId,
+    pn: upiName,
+    am: amount.toFixed(2),
+    cu: "INR",
+    tn: "AquaBiz EMI Payment",
+  });
+  return `upi://pay?${params.toString()}`;
+}
+
+function receiptWhatsappLink(invoice, payment) {
+  const mobile = String(invoice.mobile || "").replace(/\D/g, "");
+  const amount = Number(payment.cash_amount || 0) + Number(payment.upi_amount || 0);
+  const text = encodeURIComponent(`Namaste ${invoice.customer_name || ""}, AquaBiz EMI payment receipt. Received: ${formatINR(amount)} on ${payment.payment_date || dateKey(payment.created_at) || todayISO()}. Thank you.`);
   return mobile ? `https://wa.me/91${mobile}?text=${text}` : `https://wa.me/?text=${text}`;
 }
 
@@ -171,6 +194,7 @@ export function EmiManagementPage({ invoices = [], invoicePayments = [], busines
   });
 
   const selected = enrichedInvoices.find((row) => String(row.invoice.id) === String(selectedInvoiceId)) || filtered[0];
+  const selectedUpiUri = selected ? buildEmiUpiUri(selected.invoice, businessSettings) : "";
   const currentMonth = getLocalMonthKey();
   const receivedThisMonth = enrichedInvoices.reduce((sum, row) => sum + row.payments
     .filter((payment) => String(payment.payment_date || payment.created_at || "").slice(0, 7) === currentMonth)
@@ -301,6 +325,38 @@ export function EmiManagementPage({ invoices = [], invoicePayments = [], busines
             {selected.dueAmount > 0 && <button className="danger-btn" onClick={() => closeEmi(selected.invoice)}>Close EMI</button>}
           </div>
 
+          <section className="emi-detail-grid">
+            <div className="emi-qr-card">
+              <div>
+                <span>Monthly EMI QR</span>
+                <strong>{formatINR(getEmiAmount(selected.invoice))}</strong>
+                <p>Scan to collect current monthly EMI. QR uses Business Settings UPI ID.</p>
+              </div>
+              {selected.dueAmount <= 0 ? (
+                <div className="success-box">EMI is fully closed.</div>
+              ) : selectedUpiUri ? (
+                <div className="emi-qr-box">
+                  <QRCodeCanvas value={selectedUpiUri} size={132} includeMargin />
+                  <small>UPI ID: {selected.invoice.upi_id || businessSettings?.upi_id}</small>
+                </div>
+              ) : (
+                <div className="error-box">Please add UPI ID in Business Settings before printing EMI QR.</div>
+              )}
+              {selected.dueAmount > 0 && (
+                <div className="row-actions">
+                  <button className="primary-btn small" onClick={() => setPaymentInvoiceId(selected.invoice.id)}>Record EMI Payment</button>
+                  <a className="ghost-btn small" href={whatsappLink(selected.invoice)} target="_blank" rel="noreferrer">Send Reminder</a>
+                </div>
+              )}
+            </div>
+            <div className="emi-balance-card">
+              <div><span>Total Balance</span><strong>{formatINR(selected.dueAmount)}</strong></div>
+              <div><span>Paid EMI</span><strong>{formatINR(selected.paidEmi)}</strong></div>
+              <div><span>Next EMI Due</span><strong>{selected.nextUnpaid?.dueDate || "Closed"}</strong></div>
+              <div><span>Status</span><strong>{selected.status}</strong></div>
+            </div>
+          </section>
+
           <div className="responsive-table">
             <table className="parts-table">
               <thead>
@@ -337,6 +393,7 @@ export function EmiManagementPage({ invoices = [], invoicePayments = [], busines
                   <p>Cash {formatINR(payment.cash_amount)} | UPI {formatINR(payment.upi_amount)} {payment.note ? `| ${payment.note}` : ""}</p>
                 </div>
                 <button className="primary-btn small" onClick={() => printEmiReceipt(selected.invoice, payment, businessSettings)}>Print Receipt</button>
+                <a className="ghost-btn small" href={receiptWhatsappLink(selected.invoice, payment)} target="_blank" rel="noreferrer">WhatsApp Receipt</a>
               </div>
             ))}
           </section>
