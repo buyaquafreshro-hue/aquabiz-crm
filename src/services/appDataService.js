@@ -29,6 +29,9 @@ export async function fetchAppData() {
     expenseCategoriesRes,
     expensesRes,
     cashbookOpeningsRes,
+    bomTemplatesRes,
+    bomItemsRes,
+    assemblyOrdersRes,
   ] = await Promise.all([
     supabase.from("services").select("*").order("name", { ascending: true }),
     supabase.from("technicians").select("*").order("name", { ascending: true }),
@@ -57,6 +60,9 @@ export async function fetchAppData() {
     supabase.from("expense_categories").select("*").order("name", { ascending: true }),
     supabase.from("expenses").select("*").order("expense_date", { ascending: false }),
     supabase.from("cashbook_openings").select("*").order("cashbook_date", { ascending: false }),
+    supabase.from("bom_templates").select("*").order("created_at", { ascending: false }),
+    supabase.from("bom_template_items").select("*").order("created_at", { ascending: false }),
+    supabase.from("assembly_orders").select("*").order("assembled_at", { ascending: false }),
   ]);
 
   const responses = [
@@ -87,6 +93,9 @@ export async function fetchAppData() {
     ["expense_categories", expenseCategoriesRes],
     ["expenses", expensesRes],
     ["cashbook_openings", cashbookOpeningsRes],
+    ["bom_templates", bomTemplatesRes],
+    ["bom_template_items", bomItemsRes],
+    ["assembly_orders", assemblyOrdersRes],
   ];
 
   const dataErrors = responses
@@ -131,6 +140,9 @@ export async function fetchAppData() {
     expenseCategories: expenseCategoriesRes.data || [],
     expenses: expensesRes.data || [],
     cashbookOpenings: cashbookOpeningsRes.data || [],
+    bomTemplates: bomTemplatesRes.data || [],
+    bomItems: bomItemsRes.data || [],
+    assemblyOrders: assemblyOrdersRes.data || [],
     dataErrors,
   };
 }

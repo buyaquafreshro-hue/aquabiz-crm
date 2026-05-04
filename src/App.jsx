@@ -34,6 +34,7 @@ const PayrollPage = lazy(() => import("./pages/PayrollPage").then((module) => ({
 const ExpensesPage = lazy(() => import("./pages/ExpensesPage").then((module) => ({ default: module.ExpensesPage })));
 const CashbookPage = lazy(() => import("./pages/CashbookPage").then((module) => ({ default: module.CashbookPage })));
 const EmiManagementPage = lazy(() => import("./pages/EmiManagementPage").then((module) => ({ default: module.EmiManagementPage })));
+const BomAssemblyPage = lazy(() => import("./pages/BomAssemblyPage").then((module) => ({ default: module.BomAssemblyPage })));
 
 function PageLoader() {
   return (
@@ -87,6 +88,9 @@ export default function App() {
     expenseCategories,
     expenses,
     cashbookOpenings,
+    bomTemplates,
+    bomItems,
+    assemblyOrders,
     dataErrors,
     loading,
     loadAll,
@@ -363,6 +367,7 @@ export default function App() {
         {page === "expenses" && <ExpensesPage expenseCategories={expenseCategories} expenses={expenses} onUpdated={loadAll} />}
         {page === "cashbook" && <CashbookPage invoices={invoices} invoicePayments={invoicePayments} expenses={expenses} payrollRuns={payrollRuns} cashbookOpenings={cashbookOpenings} onUpdated={loadAll} />}
         {page === "emi" && <EmiManagementPage invoices={invoices} invoicePayments={invoicePayments} businessSettings={businessSettings} onUpdated={loadAll} />}
+        {page === "bom" && <BomAssemblyPage products={products} inventory={inventory} bomTemplates={bomTemplates} bomItems={bomItems} assemblyOrders={assemblyOrders} onUpdated={loadAll} />}
         {page === "payroll" && (
           <PayrollPage
             telecallers={telecallers}

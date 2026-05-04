@@ -358,6 +358,7 @@ export function SettingsPage({ services, setPage, onUpdated }) {
           <button onClick={() => setPage("business")}>Business Settings</button>
           <button onClick={() => setPage("plans")}>Plans / Products</button>
           <button onClick={() => setPage("inventory")}>Inventory</button>
+          <button onClick={() => setPage("bom")}>BOM / Assembly</button>
           <button onClick={() => setPage("technicianParts")}>Technician Parts</button>
           <button onClick={() => setPage("technicianTracking")}>Technician Tracking</button>
           <button onClick={() => setPage("payroll")}>Payroll</button>

@@ -4,6 +4,9 @@
 alter table ro_products
 add column if not exists min_down_payment numeric default 0;
 
+alter table ro_products
+add column if not exists stock_qty numeric default 0;
+
 alter table business_settings
 add column if not exists upi_id text,
 add column if not exists upi_name text,
@@ -66,6 +69,51 @@ create table if not exists technician_locations (
   created_at timestamptz default now()
 );
 
+create table if not exists bom_templates (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid,
+  product_name text,
+  name text not null,
+  notes text,
+  created_at timestamptz default now()
+);
+
+create table if not exists bom_template_items (
+  id uuid primary key default gen_random_uuid(),
+  bom_template_id uuid references bom_templates(id) on delete cascade,
+  part_id uuid,
+  part_name text,
+  quantity numeric default 0,
+  unit_cost numeric default 0,
+  created_at timestamptz default now()
+);
+
+create table if not exists assembly_orders (
+  id uuid primary key default gen_random_uuid(),
+  bom_template_id uuid,
+  product_id uuid,
+  product_name text,
+  quantity numeric default 0,
+  unit_cost numeric default 0,
+  total_cost numeric default 0,
+  selling_price numeric default 0,
+  profit numeric default 0,
+  assembled_at date default current_date,
+  notes text,
+  created_at timestamptz default now()
+);
+
+create table if not exists assembly_order_items (
+  id uuid primary key default gen_random_uuid(),
+  assembly_order_id uuid references assembly_orders(id) on delete cascade,
+  part_id uuid,
+  part_name text,
+  quantity numeric default 0,
+  unit_cost numeric default 0,
+  total_cost numeric default 0,
+  created_at timestamptz default now()
+);
+
 create or replace view latest_technician_locations as
 select distinct on (technician_id)
   *
@@ -74,6 +122,10 @@ order by technician_id, created_at desc;
 
 alter table sales_persons enable row level security;
 alter table technician_locations enable row level security;
+alter table bom_templates enable row level security;
+alter table bom_template_items enable row level security;
+alter table assembly_orders enable row level security;
+alter table assembly_order_items enable row level security;
 
 do $$
 begin
@@ -91,6 +143,42 @@ begin
   ) then
     create policy "Allow app access technician_locations"
     on technician_locations for all
+    using (true)
+    with check (true);
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname = 'public' and tablename = 'bom_templates' and policyname = 'Allow app access bom_templates'
+  ) then
+    create policy "Allow app access bom_templates"
+    on bom_templates for all
+    using (true)
+    with check (true);
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname = 'public' and tablename = 'bom_template_items' and policyname = 'Allow app access bom_template_items'
+  ) then
+    create policy "Allow app access bom_template_items"
+    on bom_template_items for all
+    using (true)
+    with check (true);
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname = 'public' and tablename = 'assembly_orders' and policyname = 'Allow app access assembly_orders'
+  ) then
+    create policy "Allow app access assembly_orders"
+    on assembly_orders for all
+    using (true)
+    with check (true);
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname = 'public' and tablename = 'assembly_order_items' and policyname = 'Allow app access assembly_order_items'
+  ) then
+    create policy "Allow app access assembly_order_items"
+    on assembly_order_items for all
     using (true)
     with check (true);
   end if;

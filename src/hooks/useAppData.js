@@ -29,6 +29,9 @@ const initialData = {
   expenseCategories: [],
   expenses: [],
   cashbookOpenings: [],
+  bomTemplates: [],
+  bomItems: [],
+  assemblyOrders: [],
   dataErrors: [],
 };
 
