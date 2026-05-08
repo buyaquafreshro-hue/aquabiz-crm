@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { emptyPayment } from "../constants/defaults";
-import { StatCard } from "../components/shared";
+import { DetailDrawer, StatCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
 import { formatINR, getDueAmount, getPaidAmount, nextMonthlyDate, todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl, paymentReminderMessage } from "../utils/whatsappUtils";
@@ -132,6 +132,7 @@ export function CollectionsPage({ invoices, invoicePayments = [], businessSettin
   const [paymentInvoiceId, setPaymentInvoiceId] = useState(null);
   const [followUpInvoiceId, setFollowUpInvoiceId] = useState(null);
   const [followUpForm, setFollowUpForm] = useState({ date: todayISO(), note: "" });
+  const [detailInvoiceId, setDetailInvoiceId] = useState(null);
   const [message, setMessage] = useState("");
   useAutoHideMessage(message, setMessage);
 
@@ -176,6 +177,9 @@ export function CollectionsPage({ invoices, invoicePayments = [], businessSettin
     return buildWhatsAppUrl(invoice.mobile, paymentReminderMessage(invoice, businessSettings));
   }
 
+  const detailInvoice = pendingInvoices.find((invoice) => String(invoice.id) === String(detailInvoiceId));
+  const detailPayments = detailInvoice ? invoicePayments.filter((payment) => String(payment.invoice_id) === String(detailInvoice.id)) : [];
+
   return (
     <>
       <section className="page-head collections-page-head">
@@ -206,7 +210,14 @@ export function CollectionsPage({ invoices, invoicePayments = [], businessSettin
           );
 
           return (
-            <div className="job-card" key={invoice.id}>
+            <div
+              className="job-card clickable-row"
+              key={invoice.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => setDetailInvoiceId(invoice.id)}
+              onKeyDown={(event) => { if (event.key === "Enter") setDetailInvoiceId(invoice.id); }}
+            >
               <div className="booking-card-head">
                 <div>
                   <strong>{invoice.customer_name}</strong>
@@ -245,7 +256,7 @@ export function CollectionsPage({ invoices, invoicePayments = [], businessSettin
                 </div>
               )}
 
-              <div className="row-actions">
+              <div className="row-actions" onClick={(event) => event.stopPropagation()}>
                 <a className="ghost-btn small" href={`tel:${invoice.mobile}`}>Call</a>
                 <a className="ghost-btn small" href={whatsAppLink(invoice)} target="_blank" rel="noreferrer">WhatsApp</a>
                 <button className="primary-btn small" onClick={() => setPaymentInvoiceId(paymentInvoiceId === invoice.id ? null : invoice.id)}>Add Payment</button>
@@ -264,18 +275,20 @@ export function CollectionsPage({ invoices, invoicePayments = [], businessSettin
               </div>
 
               {paymentInvoiceId === invoice.id && (
-                <InvoicePaymentForm
-                  invoice={invoice}
-                  onClose={() => setPaymentInvoiceId(null)}
-                  onDone={async () => {
-                    setPaymentInvoiceId(null);
-                    await onUpdated?.();
-                  }}
-                />
+                <div onClick={(event) => event.stopPropagation()}>
+                  <InvoicePaymentForm
+                    invoice={invoice}
+                    onClose={() => setPaymentInvoiceId(null)}
+                    onDone={async () => {
+                      setPaymentInvoiceId(null);
+                      await onUpdated?.();
+                    }}
+                  />
+                </div>
               )}
 
               {followUpInvoiceId === invoice.id && (
-                <section className="sub-panel">
+                <section className="sub-panel" onClick={(event) => event.stopPropagation()}>
                   <div className="panel-head">
                     <h3>Set Follow-up</h3>
                     <button className="ghost-btn small" onClick={() => setFollowUpInvoiceId(null)}>Close</button>
@@ -291,6 +304,34 @@ export function CollectionsPage({ invoices, invoicePayments = [], businessSettin
           );
         })}
       </section>
+
+      <DetailDrawer
+        title={detailInvoice ? `Collection: ${detailInvoice.customer_name || "Customer"}` : ""}
+        subtitle={detailInvoice ? `${detailInvoice.mobile || ""} | ${detailInvoice.invoice_type || "invoice"}` : ""}
+        onClose={() => setDetailInvoiceId(null)}
+        fields={detailInvoice ? [
+          { label: "Total", value: formatINR(detailInvoice.total_amount) },
+          { label: "Paid", value: formatINR(getPaidAmount(detailInvoice)) },
+          { label: "Pending", value: formatINR(getDueAmount(detailInvoice)) },
+          { label: "Payment Status", value: detailInvoice.payment_status },
+          { label: "Payment Method", value: detailInvoice.payment_method },
+          { label: "EMI Due", value: detailInvoice.emi_next_due_date },
+          { label: "Follow-up", value: detailInvoice.collection_follow_up_date },
+          { label: "Note", value: detailInvoice.collection_note },
+          { label: "Invoice ID", value: detailInvoice.id },
+        ] : []}
+      >
+        {detailPayments.length > 0 && (
+          <section className="sub-panel">
+            <h3>Payments</h3>
+            {detailPayments.map((payment) => (
+              <div className="mini-line" key={payment.id}>
+                {payment.payment_date} | Cash {formatINR(payment.cash_amount)} | UPI {formatINR(payment.upi_amount)}
+              </div>
+            ))}
+          </section>
+        )}
+      </DetailDrawer>
     </>
   );
 }

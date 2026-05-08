@@ -1,17 +1,28 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LeadsPage } from "../pages/LeadsPage";
 import { NewBooking } from "../pages/NewBooking";
 import { formatINR } from "../utils/appUtils";
 import { calculateTelecallerStats } from "../utils/roleDashboard";
+import { clearRoleSession, getRoleSession, saveRoleSession } from "../utils/roleSession";
 import { useAutoHideMessage } from "../utils/toastUtils";
 
-export function TelecallerPanel({ telecallers, leads, services, technicians, customers = [], bookings = [], jobs = [], invoices = [], onUpdated }) {
+export function TelecallerPanel({ telecallers, leads, services, technicians, customers = [], bookings = [], jobs = [], invoices = [], onUpdated, onLogout }) {
   const [login, setLogin] = useState({ mobile: "", pin: "" });
   const [loggedInTelecaller, setLoggedInTelecaller] = useState(null);
   const [tab, setTab] = useState("leads");
   const [leadDraft, setLeadDraft] = useState(null);
   const [message, setMessage] = useState("");
   useAutoHideMessage(message, setMessage);
+
+  useEffect(() => {
+    if (loggedInTelecaller || telecallers.length === 0) return;
+    const session = getRoleSession();
+    if (session?.role !== "telecaller") return;
+    const user = telecallers.find((t) => String(t.id) === String(session.userId) && t.is_active !== false);
+    if (!user) return;
+    const timer = window.setTimeout(() => setLoggedInTelecaller(user), 0);
+    return () => window.clearTimeout(timer);
+  }, [loggedInTelecaller, telecallers]);
 
   function handleLogin() {
     setMessage("");
@@ -36,6 +47,7 @@ export function TelecallerPanel({ telecallers, leads, services, technicians, cus
     }
 
     setLoggedInTelecaller(user);
+    saveRoleSession("telecaller", user);
     setLogin({ mobile: "", pin: "" });
   }
 
@@ -87,7 +99,7 @@ export function TelecallerPanel({ telecallers, leads, services, technicians, cus
         <div className="row-actions">
           <button className={tab === "leads" ? "primary-btn small" : "ghost-btn small"} onClick={() => setTab("leads")}>Leads</button>
           <button className={tab === "booking" ? "primary-btn small" : "ghost-btn small"} onClick={() => setTab("booking")}>New Booking</button>
-          <button className="ghost-btn small" onClick={() => setLoggedInTelecaller(null)}>Logout</button>
+          <button className="ghost-btn small" onClick={() => { clearRoleSession(); setLoggedInTelecaller(null); onLogout?.(); }}>Logout</button>
         </div>
       </section>
 

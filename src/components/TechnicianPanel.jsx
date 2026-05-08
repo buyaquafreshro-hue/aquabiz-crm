@@ -2,15 +2,61 @@ import { useEffect, useRef, useState } from "react";
 import { InvoiceBuilder } from "./InvoiceBuilder";
 import { BookingMini } from "./shared";
 import { PartsTable } from "./PartsTable";
+import { completeJobWithInvoice } from "../services/jobAssignments";
 import { supabase } from "../supabaseClient";
 import { formatINR } from "../utils/appUtils";
 import { calculateTechnicianStats, isOpenJobStatus } from "../utils/roleDashboard";
+import { clearRoleSession, getRoleSession, saveRoleSession } from "../utils/roleSession";
 import { buildWhatsAppUrl, customerGreetingMessage } from "../utils/whatsappUtils";
 import { useAutoHideMessage } from "../utils/toastUtils";
-export function TechnicianPanel({ jobs, bookings, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, businessSettings, onUpdated }) {
+
+const TECH_DUTY_SESSION_KEY = "aquabiz_technician_duty_session";
+const TECH_DUTY_SESSION_MS = 18 * 60 * 60 * 1000;
+
+function saveDutySession(technician, tracking) {
+  if (!technician?.id || !tracking?.active) return;
+  localStorage.setItem(TECH_DUTY_SESSION_KEY, JSON.stringify({
+    technicianId: technician.id,
+    active: true,
+    type: tracking.type || "duty",
+    jobId: tracking.jobId || null,
+    updatedAt: new Date().toISOString(),
+  }));
+}
+
+function getDutySession(technicianId) {
+  const stored = localStorage.getItem(TECH_DUTY_SESSION_KEY);
+  if (!stored || !technicianId) return null;
+
+  try {
+    const parsed = JSON.parse(stored);
+    const updatedTime = new Date(parsed.updatedAt).getTime();
+    const expired = Number.isNaN(updatedTime) || Date.now() - updatedTime > TECH_DUTY_SESSION_MS;
+    if (expired || String(parsed.technicianId) !== String(technicianId) || !parsed.active) {
+      localStorage.removeItem(TECH_DUTY_SESSION_KEY);
+      return null;
+    }
+    return {
+      active: true,
+      type: parsed.type || "duty",
+      jobId: parsed.jobId || null,
+    };
+  } catch {
+    localStorage.removeItem(TECH_DUTY_SESSION_KEY);
+    return null;
+  }
+}
+
+function clearDutySession() {
+  localStorage.removeItem(TECH_DUTY_SESSION_KEY);
+}
+
+export function TechnicianPanel({ jobs, bookings, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, onUpdated, onLogout }) {
   const [login, setLogin] = useState({ mobile: "", pin: "" });
   const [loggedInTech, setLoggedInTech] = useState(null);
   const [invoiceJobId, setInvoiceJobId] = useState(null);
+  const [completionJobId, setCompletionJobId] = useState(null);
+  const [completionInvoiceType, setCompletionInvoiceType] = useState("service");
   const [tracking, setTracking] = useState({ active: false, type: "", jobId: null });
   const [message, setMessage] = useState("");
   const trackingTimerRef = useRef(null);
@@ -22,6 +68,23 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
   const myParts = loggedInTech
     ? technicianParts.filter((row) => String(row.technician_id) === String(loggedInTech.id))
     : [];
+
+  useEffect(() => {
+    if (loggedInTech || technicians.length === 0) return;
+    const session = getRoleSession();
+    if (session?.role !== "technician") return;
+    const tech = technicians.find((t) => String(t.id) === String(session.userId) && t.is_active !== false);
+    if (!tech) return;
+    const timer = window.setTimeout(() => {
+      setLoggedInTech(tech);
+      const dutySession = getDutySession(tech.id);
+      if (dutySession) {
+        setTracking(dutySession);
+        setMessage(dutySession.type === "job" ? "Job duty resumed." : "Duty resumed.");
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loggedInTech, technicians]);
 
   function handleLogin() {
     setMessage("");
@@ -47,14 +110,45 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
     }
 
     setLoggedInTech(tech);
+    const dutySession = getDutySession(tech.id);
+    if (dutySession) {
+      setTracking(dutySession);
+      setMessage(dutySession.type === "job" ? "Job duty resumed." : "Duty resumed.");
+    }
+    saveRoleSession("technician", tech);
     setLogin({ mobile: "", pin: "" });
     setInvoiceJobId(null);
-    setMessage("");
+    setCompletionJobId(null);
+    if (!dutySession) setMessage("");
   }
 
-  useEffect(() => () => {
+  useEffect(() => {
+    if (!loggedInTech || !tracking.active) return undefined;
+
     if (trackingTimerRef.current) window.clearInterval(trackingTimerRef.current);
-  }, []);
+    saveDutySession(loggedInTech, tracking);
+    trackingTimerRef.current = window.setInterval(() => {
+      saveDutySession(loggedInTech, tracking);
+      saveLocation({ online: true, type: tracking.type || "duty", jobId: tracking.jobId || null });
+    }, 60000);
+
+    const saveOnReturn = () => {
+      if (document.visibilityState === "visible") {
+        saveDutySession(loggedInTech, tracking);
+        saveLocation({ online: true, type: tracking.type || "duty", jobId: tracking.jobId || null });
+      }
+    };
+
+    document.addEventListener("visibilitychange", saveOnReturn);
+    window.addEventListener("focus", saveOnReturn);
+
+    return () => {
+      if (trackingTimerRef.current) window.clearInterval(trackingTimerRef.current);
+      trackingTimerRef.current = null;
+      document.removeEventListener("visibilitychange", saveOnReturn);
+      window.removeEventListener("focus", saveOnReturn);
+    };
+  }, [loggedInTech, tracking]);
 
   async function saveLocation({ online = true, type = "duty", jobId = null } = {}) {
     if (!loggedInTech) return;
@@ -86,25 +180,49 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
 
   function startTracking(type = "duty", jobId = null) {
     if (trackingTimerRef.current) window.clearInterval(trackingTimerRef.current);
-    setTracking({ active: true, type, jobId });
+    const nextTracking = { active: true, type, jobId };
+    setTracking(nextTracking);
+    saveDutySession(loggedInTech, nextTracking);
     setMessage(type === "job" ? "Job in progress." : "You are on duty.");
     saveLocation({ online: true, type, jobId });
-    trackingTimerRef.current = window.setInterval(() => saveLocation({ online: true, type, jobId }), 60000);
   }
 
   async function stopTracking() {
     if (trackingTimerRef.current) window.clearInterval(trackingTimerRef.current);
     trackingTimerRef.current = null;
     await saveLocation({ online: false, type: tracking.type || "duty", jobId: tracking.jobId });
+    clearDutySession();
     setTracking({ active: false, type: "", jobId: null });
     setMessage("You are currently off duty.");
   }
 
   function logout() {
     if (tracking.active) stopTracking();
+    clearDutySession();
+    clearRoleSession();
     setLoggedInTech(null);
     setInvoiceJobId(null);
+    setCompletionJobId(null);
     setMessage("");
+    onLogout?.();
+  }
+
+  async function completeWithExistingInvoice(job) {
+    const invoice = invoices.find((i) => String(i.booking_id) === String(job.booking_id));
+    if (!invoice?.id) {
+      setMessage("Invoice is required before closing the job.");
+      return;
+    }
+    const { error } = await completeJobWithInvoice({ bookingId: job.booking_id, jobId: job.id, invoiceId: invoice.id });
+    if (error) return setMessage(error.message);
+    setMessage("Job completed.");
+    await onUpdated();
+  }
+
+  function openCompletion(job, type = "service") {
+    setCompletionInvoiceType(type);
+    setCompletionJobId(job.id);
+    setInvoiceJobId(null);
   }
 
   async function updateStatus(job, status) {
@@ -118,7 +236,14 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
       await supabase.from("bookings").update({ close_otp_verified: true }).eq("id", booking.id);
     }
 
-    const payload = status === "Completed" ? { status, completed_at: new Date().toISOString() } : { status };
+    if (status === "Completed") {
+      const hasInvoice = invoices.some((i) => String(i.booking_id) === String(job.booking_id));
+      if (hasInvoice) return completeWithExistingInvoice(job);
+      openCompletion(job);
+      return;
+    }
+
+    const payload = { status };
     const { error } = await supabase
       .from("job_assignments")
       .update(payload)
@@ -299,6 +424,39 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
                   {hasInvoice && <span className="status assigned">Invoice Generated</span>}
                 </div>
 
+                {completionJobId === job.id && booking && (
+                  <div className="sub-panel">
+                    <h3>Generate invoice for this job?</h3>
+                    <BookingMini booking={booking} />
+                    <p className="muted">Job was not closed yet. Generate an invoice first, then the job will be completed.</p>
+                    <div className="row-actions">
+                      <button className="primary-btn small" onClick={() => setCompletionInvoiceType("service")}>Generate Invoice</button>
+                      <button className="ghost-btn small" onClick={() => setCompletionInvoiceType("zero")}>Generate ₹0 Invoice</button>
+                      <button className="ghost-btn small" onClick={() => { setCompletionJobId(null); setMessage("Job was not closed because invoice was not generated."); }}>Cancel</button>
+                    </div>
+                    <InvoiceBuilder
+                      key={`${job.id}-${completionInvoiceType}`}
+                      job={job}
+                      booking={booking}
+                      inventory={inventory}
+                      technicianParts={technicianParts}
+                      coverages={coverages}
+                      invoices={invoices}
+                      amcPlans={amcPlans}
+                      products={products}
+                      salesPersons={salesPersons}
+                      businessSettings={businessSettings}
+                      defaultInvoiceType={completionInvoiceType}
+                      completionMode
+                      onClose={() => setCompletionJobId(null)}
+                      onDone={async () => {
+                        setCompletionJobId(null);
+                        await onUpdated();
+                      }}
+                    />
+                  </div>
+                )}
+
                 {invoiceJobId === job.id && booking && (
                   <InvoiceBuilder
                     job={job}
@@ -309,6 +467,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
                     invoices={invoices}
                     amcPlans={amcPlans}
                     products={products}
+                    salesPersons={salesPersons}
                     businessSettings={businessSettings}
                     onClose={() => setInvoiceJobId(null)}
                     onDone={async () => {

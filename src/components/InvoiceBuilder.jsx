@@ -2,12 +2,13 @@ import { useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import { FormCard } from "./shared";
 import { PartsTable, StockBadge } from "./PartsTable";
+import { completeJobWithInvoice } from "../services/jobAssignments";
 import { supabase } from "../supabaseClient";
 import { addDays, coverageLabel, formatINR, isActive, itemCoveredByRecord, nextMonthlyDate, todayISO } from "../utils/appUtils";
 import { calculateSalesIncentive } from "../utils/salesUtils";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
-export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], coverages, invoices, amcPlans = [], products = [], salesPersons = [], businessSettings = {}, onClose, onDone }) {
-  const [invoiceType, setInvoiceType] = useState("service");
+export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], coverages, invoices, amcPlans = [], products = [], salesPersons = [], businessSettings = {}, defaultInvoiceType = "service", completionMode = false, onClose, onDone }) {
+  const [invoiceType, setInvoiceType] = useState(defaultInvoiceType);
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [selectedProductId, setSelectedProductId] = useState("");
   const [discount, setDiscount] = useState("0");
@@ -27,6 +28,8 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [showPaymentConfirm, setShowPaymentConfirm] = useState(false);
   const [salesPersonId, setSalesPersonId] = useState("");
+  const [zeroInvoiceReason, setZeroInvoiceReason] = useState("");
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   useAutoHideMessage(message, setMessage);
 
@@ -41,6 +44,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
     : 0;
 
   const activeCoverage = coverages?.find((a) => String(a.mobile) === String(booking?.mobile) && isActive(a));
+  const isZeroInvoice = invoiceType === "zero";
   const serviceCovered = invoiceType === "service" && activeCoverage && Number(activeCoverage.used_visits || 0) < Number(activeCoverage.free_visits || 0);
 
   const baseServiceCharge = Number(booking?.booking_amount || 0);
@@ -48,18 +52,22 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
 
   const planAmount = invoiceType === "amc" ? Number(selectedPlan?.price || 0) : 0;
   const productAmount = invoiceType === "new_sale" ? Number(selectedProduct?.price || 0) : 0;
+  const minimumDownPayment = invoiceType === "new_sale" ? Number(selectedProduct?.min_down_payment || 0) : 0;
   const rentalAmount = invoiceType === "rental" ? Number(rentalDeposit || 0) + Number(rentalMonthly || 0) : 0;
   const partsTotal = parts.reduce((sum, p) => sum + Number(p.billing_price || 0) * Number(p.quantity || 0), 0);
   const discountAmount = Number(discount || 0);
   const subtotal = serviceCharge + planAmount + productAmount + rentalAmount + partsTotal;
   const total = Math.max(subtotal - discountAmount, 0);
 
-  const paidAmount = Number(cashAmount || 0) + Number(upiAmount || 0);
+  const paidAmount = isZeroInvoice ? 0 : Number(cashAmount || 0) + Number(upiAmount || 0);
   const dueAmount = Math.max(total - paidAmount, 0);
-  const paymentStatus = paidAmount <= 0 ? "Pending" : paidAmount >= total ? "Paid" : "Partial";
+  const paymentStatus = isZeroInvoice ? "Covered" : paidAmount <= 0 ? "Pending" : paidAmount >= total ? "Paid" : "Partial";
   const safeEmiMonths = Math.max(Number(emiMonths || 1), 1);
   const monthlyEmi = Math.ceil(dueAmount / safeEmiMonths);
   const paymentMethod =
+    isZeroInvoice
+      ? "covered"
+      :
     paymentMode === "emi"
       ? "emi"
       : paymentMode === "pending"
@@ -85,6 +93,14 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
   const salesIncentiveAmount = invoiceType === "amc" || invoiceType === "new_sale" ? calculateSalesIncentive(total, selectedSalesPerson) : 0;
   const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(upiName)}&am=${encodeURIComponent(upfrontUpiQrAmount.toFixed(2))}&cu=INR&tn=${encodeURIComponent("AquaBiz Invoice Payment")}`;
 
+  function startEmiMode() {
+    setPaymentMode("emi");
+    if (invoiceType === "new_sale" && selectedProduct && paidAmount <= 0) {
+      setCashAmount(String(minimumDownPayment || 0));
+      setUpiAmount("0");
+    }
+  }
+
   function getTechnicianQty(itemId) {
     return technicianParts
       .filter((row) => String(row.technician_id) === String(job?.technician_id) && String(row.inventory_item_id) === String(itemId))
@@ -107,7 +123,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
       return;
     }
 
-    const covered = invoiceType === "service" && activeCoverage && itemCoveredByRecord(item, activeCoverage);
+    const covered = isZeroInvoice || (invoiceType === "service" && activeCoverage && itemCoveredByRecord(item, activeCoverage));
     const selling = Number(item.selling_price || 0);
 
     setParts([
@@ -120,7 +136,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
         actual_selling_price: selling,
         billing_price: covered ? 0 : selling,
         is_covered: !!covered,
-        covered_reason: covered ? "Covered under AMC/Warranty" : "",
+        covered_reason: isZeroInvoice ? (zeroInvoiceReason.trim() || "Zero amount invoice") : covered ? "Covered under AMC/Warranty" : "",
       },
     ]);
 
@@ -129,12 +145,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
     setPartQtyById({ ...partQtyById, [item.id]: "1" });
   }
 
-  function addPart() {
-    const item = inventory.find((p) => String(p.id) === String(selectedPart));
-    addPartItem(item, qty);
-  }
-
-  async function createCoverageFromInvoice(invoiceId) {
+  async function createCoverageFromInvoice() {
     const invoiceDate = todayISO();
 
     const source = invoiceType === "amc" ? selectedPlan : selectedProduct;
@@ -174,6 +185,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
   }
 
   async function generateInvoice(forceConfirmed = false) {
+    if (saving) return;
     setMessage("");
 
     if (!booking) return setMessage("Booking missing.");
@@ -181,11 +193,9 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
     const already = invoices.find((i) => String(i.booking_id) === String(booking.id));
     if (already) return setMessage("Invoice already generated for this booking.");
 
+    if (isZeroInvoice && !zeroInvoiceReason.trim()) return setMessage("Reason/note is required for a ₹0 invoice.");
     if (invoiceType === "amc" && !selectedPlan) return setMessage("Please select an AMC plan.");
     if (invoiceType === "new_sale" && !selectedProduct) return setMessage("Please select an RO product.");
-    if (invoiceType === "new_sale" && paymentMode === "emi" && selectedProduct && paidAmount < Number(selectedProduct.min_down_payment || 0)) {
-      return setMessage("Down payment cannot be less than minimum down payment for this product.");
-    }
     if (isEmiInvoice && productPrice <= 0) return setMessage("Product price is required for EMI invoice.");
     if (isEmiInvoice && downPaymentTotal <= 0) return setMessage("Down payment total is required for EMI invoice.");
     if (isEmiInvoice && Math.abs(downPaymentTotal - (downPaymentCash + downPaymentUpi)) > 0.01) return setMessage("Down payment total must equal cash plus UPI.");
@@ -198,9 +208,12 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
       return;
     }
 
+    setSaving(true);
+
     for (const part of parts) {
       const inv = inventory.find((p) => String(p.id) === String(part.inventory_item_id));
       if (inv && Number(inv.stock_qty || 0) < Number(part.quantity || 0)) {
+        setSaving(false);
         return setMessage(`${part.part_name} stock not enough.`);
       }
 
@@ -210,12 +223,11 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
           .reduce((sum, row) => sum + Number(row.quantity || 0), 0);
 
         if (technicianQty < Number(part.quantity || 0)) {
+          setSaving(false);
           return setMessage(`${part.part_name} is not enough with this technician. Available with technician: ${technicianQty}.`);
         }
       }
     }
-
-    let createdCoverage = null;
 
     if (invoiceType === "amc" || invoiceType === "new_sale") {
       // Create invoice first with no coverage_id, then activate coverage and update invoice.
@@ -227,6 +239,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
         {
           invoice_type: invoiceType,
           booking_id: booking.id,
+          job_assignment_id: job?.id || null,
           customer_name: booking.customer_name,
           mobile: booking.mobile,
           service_charge: serviceCharge,
@@ -237,6 +250,9 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
           payment_method: paymentMethod,
           telecaller_id: booking.telecaller_id || booking.created_by_telecaller_id || null,
           technician_id: job?.technician_id || booking.assigned_technician_id || booking.technician_id || null,
+          invoice_reason: isZeroInvoice ? zeroInvoiceReason.trim() : serviceCovered ? "Covered under AMC/Warranty" : "",
+          coverage_type: isZeroInvoice ? "zero_invoice" : activeCoverage?.source_type || invoiceType,
+          is_zero_invoice: isZeroInvoice,
           sales_person_id: selectedSalesPerson?.id || null,
           sales_incentive_amount: salesIncentiveAmount,
           cash_amount: Number(cashAmount || 0),
@@ -273,31 +289,35 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
       .select()
       .single();
 
-    if (invoiceError) return setMessage(invoiceError.message);
+    if (invoiceError) {
+      setSaving(false);
+      return setMessage(invoiceError.message);
+    }
 
     if (invoiceType === "amc" || invoiceType === "new_sale") {
       try {
-        createdCoverage = await createCoverageFromInvoice(invoice.id);
+        const createdCoverage = await createCoverageFromInvoice();
         if (createdCoverage?.id) {
           await supabase.from("invoices").update({ coverage_id: createdCoverage.id }).eq("id", invoice.id);
         }
       } catch (err) {
+        setSaving(false);
         return setMessage("Invoice saved, but coverage activation error: " + err.message);
       }
     }
 
     const items = [];
 
-    if (invoiceType === "service") {
+    if (invoiceType === "service" || isZeroInvoice) {
       items.push({
         invoice_id: invoice.id,
         item_type: "service",
         item_name: booking.service_type,
         quantity: 1,
         actual_price: baseServiceCharge,
-        billing_price: serviceCharge,
-        is_covered: !!serviceCovered,
-        covered_reason: serviceCovered ? "Free service visit used" : "",
+        billing_price: isZeroInvoice ? 0 : serviceCharge,
+        is_covered: isZeroInvoice || !!serviceCovered,
+        covered_reason: isZeroInvoice ? zeroInvoiceReason.trim() : serviceCovered ? "Free service visit used" : "",
       });
     }
 
@@ -353,7 +373,10 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
     }));
 
     const { error: itemsError } = await supabase.from("invoice_items").insert([...items, ...partItems]);
-    if (itemsError) return setMessage(itemsError.message);
+    if (itemsError) {
+      setSaving(false);
+      return setMessage(itemsError.message);
+    }
 
     for (const part of parts) {
       const inv = inventory.find((p) => String(p.id) === String(part.inventory_item_id));
@@ -371,7 +394,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
             billing_price: part.billing_price,
             is_covered: part.is_covered,
             covered_reason: part.covered_reason,
-            technician_id: job.technician_id,
+            technician_id: job?.technician_id || null,
           },
         ]);
 
@@ -423,9 +446,21 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
         .eq("id", booking.id);
     }
 
-    await supabase.from("job_assignments").update({ status: "Completed" }).eq("id", job.id);
+    if (job?.id) {
+      const { error: completeError } = await completeJobWithInvoice({
+        bookingId: booking.id,
+        jobId: job.id,
+        invoiceId: invoice.id,
+      });
 
-    setMessage("Invoice generated successfully.");
+      if (completeError) {
+        setSaving(false);
+        return setMessage("Invoice saved, but job close error: " + completeError.message);
+      }
+    }
+
+    setSaving(false);
+    setMessage(completionMode ? "Invoice generated and job completed successfully." : "Invoice generated successfully.");
     await onDone();
   }
 
@@ -439,6 +474,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
       <FormCard label="Invoice Type">
         <div className="chip-grid">
           <button className={invoiceType === "service" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("service")}>Service Invoice</button>
+          <button className={invoiceType === "zero" ? "chip active" : "chip"} type="button" onClick={() => { setInvoiceType("zero"); setCashAmount("0"); setUpiAmount("0"); setPaymentMode("pending"); }}>₹0 Invoice</button>
           <button className={invoiceType === "amc" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("amc")}>AMC Sale</button>
           <button className={invoiceType === "new_sale" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("new_sale")}>New RO Sale</button>
           <button className={invoiceType === "rental" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("rental")}>RO Rental</button>
@@ -461,6 +497,23 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
         </>
       )}
 
+      {isZeroInvoice && (
+        <FormCard label="₹0 Invoice Reason">
+          <select value={zeroInvoiceReason} onChange={(e) => setZeroInvoiceReason(e.target.value)}>
+            <option value="">Select reason/note</option>
+            <option>Covered under AMC</option>
+            <option>Covered under Warranty</option>
+            <option>Free service</option>
+            <option>Goodwill service</option>
+          </select>
+          <input placeholder="Or type reason/note" value={zeroInvoiceReason} onChange={(e) => setZeroInvoiceReason(e.target.value)} />
+          <div className="amount-box">
+            <strong>Invoice Amount</strong>
+            <strong>{formatINR(0)}</strong>
+          </div>
+        </FormCard>
+      )}
+
       {invoiceType === "amc" && (
         <FormCard label="Select AMC Plan">
           <select value={selectedPlanId} onChange={(e) => setSelectedPlanId(e.target.value)}>
@@ -479,7 +532,18 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
 
       {invoiceType === "new_sale" && (
         <FormCard label="Select RO Product">
-          <select value={selectedProductId} onChange={(e) => setSelectedProductId(e.target.value)}>
+          <select
+            value={selectedProductId}
+            onChange={(e) => {
+              const nextProductId = e.target.value;
+              const nextProduct = products.find((product) => String(product.id) === String(nextProductId));
+              setSelectedProductId(nextProductId);
+              if (paymentMode === "emi" && paidAmount <= 0) {
+                setCashAmount(String(Number(nextProduct?.min_down_payment || 0)));
+                setUpiAmount("0");
+              }
+            }}
+          >
             <option value="">Select RO Product ({products.length} found)</option>
             {products.map((p) => (
               <option value={p.id} key={p.id}>{p.name} — {formatINR(p.price)}</option>
@@ -487,7 +551,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
           </select>
           {selectedProduct && (
             <div className="success-box">
-              {selectedProduct.name} | Price {formatINR(selectedProduct.price)} | Warranty {selectedProduct.warranty_validity_days} days | Free Visits {selectedProduct.free_visits}
+              {selectedProduct.name} | Price {formatINR(selectedProduct.price)} | Min Down Payment {formatINR(minimumDownPayment)} | Warranty {selectedProduct.warranty_validity_days} days | Free Visits {selectedProduct.free_visits}
             </div>
           )}
         </FormCard>
@@ -505,14 +569,15 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
       )}
 
       {(invoiceType === "amc" || invoiceType === "new_sale") && (
-        <FormCard label="Discount">
+        <FormCard label="Invoice Discount">
           <input
-            placeholder="Discount amount"
+            aria-label="Discount amount to subtract from invoice total"
+            placeholder="Enter discount amount, e.g. 500"
             type="number"
             value={discount}
             onChange={(e) => setDiscount(e.target.value)}
           />
-          <p className="helper">For AMC/New Sale, service/visit charge will remain ₹0.</p>
+          <p className="helper">Optional discount. This amount will be reduced from the selected AMC/New RO price. Keep 0 if no discount.</p>
         </FormCard>
       )}
 
@@ -585,7 +650,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
           <button className={paymentMode === "cash" ? "chip active" : "chip"} type="button" onClick={() => { setPaymentMode("cash"); setCashAmount(String(total)); setUpiAmount("0"); }}>Cash Full</button>
           <button className={paymentMode === "upi" ? "chip active" : "chip"} type="button" onClick={() => { setPaymentMode("upi"); setCashAmount("0"); setUpiAmount(String(total)); }}>UPI Full</button>
           <button className={paymentMode === "split" ? "chip active" : "chip"} type="button" onClick={() => setPaymentMode("split")}>Cash + UPI</button>
-          <button className={paymentMode === "emi" ? "chip active" : "chip"} type="button" onClick={() => setPaymentMode("emi")}>EMI</button>
+          <button className={paymentMode === "emi" ? "chip active" : "chip"} type="button" onClick={startEmiMode}>EMI</button>
           <button className={paymentMode === "pending" ? "chip active" : "chip"} type="button" onClick={() => { setPaymentMode("pending"); setCashAmount("0"); setUpiAmount("0"); }}>Pending</button>
         </div>
 
@@ -613,6 +678,11 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
         {paymentMode === "emi" && (
           <div className="sub-panel">
             <h3>EMI Reminder</h3>
+            {invoiceType === "new_sale" && selectedProduct && (
+              <div className="muted-box">
+                Suggested minimum down payment for {selectedProduct.name}: {formatINR(minimumDownPayment)}. You can edit and accept any down payment amount.
+              </div>
+            )}
             <div className="two-col">
               <input placeholder="No. of EMI months" type="number" value={emiMonths} onChange={(e) => setEmiMonths(e.target.value)} />
               <input type="date" value={emiStartDate} onChange={(e) => setEmiStartDate(e.target.value)} />
@@ -683,7 +753,9 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
         </section>
       )}
 
-      <button className="primary-btn big" onClick={generateInvoice}>Generate Final Invoice</button>
+      <button className="primary-btn big" onClick={() => generateInvoice()} disabled={saving}>
+        {saving ? "Saving..." : "Generate Final Invoice"}
+      </button>
     </section>
   );
 }

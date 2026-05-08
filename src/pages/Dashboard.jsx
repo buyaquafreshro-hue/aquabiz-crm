@@ -100,7 +100,6 @@ export function Dashboard({ stats, bookings, jobs, technicians, technicianParts 
           <button onClick={() => setPage("business")}>{t.businessSettings}</button>
           <button onClick={() => setPage("customers")}>Customers</button>
           <button onClick={() => setPage("customerHistory")}>{t.customerHistory}</button>
-          <button onClick={() => setPage("technician")}>{t.technicianApp}</button>
         </div>
       </section>
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatINR } from "../utils/appUtils";
+import { clearRoleSession, getRoleSession, saveRoleSession } from "../utils/roleSession";
 import { calculateSalesStats } from "../utils/salesUtils";
 import { useAutoHideMessage } from "../utils/toastUtils";
 
@@ -12,12 +13,23 @@ export function SalesLogin({ salesPersons = [], invoices = [], onLogout }) {
   useAutoHideMessage(message, setMessage);
 
   useEffect(() => {
+    const roleSession = getRoleSession();
+    if (roleSession?.role === "sales") {
+      const active = salesPersons.find((person) => String(person.id) === String(roleSession.userId) && person.is_active !== false);
+      if (active) {
+        const timer = window.setTimeout(() => setSalesPerson(active), 0);
+        return () => window.clearTimeout(timer);
+      }
+    }
+
     const stored = localStorage.getItem(SALES_SESSION_KEY);
     if (!stored) return;
     try {
       const parsed = JSON.parse(stored);
       const active = salesPersons.find((person) => String(person.id) === String(parsed.id) && person.is_active !== false);
-      if (active) setSalesPerson(active);
+      if (!active) return;
+      const timer = window.setTimeout(() => setSalesPerson(active), 0);
+      return () => window.clearTimeout(timer);
     } catch {
       localStorage.removeItem(SALES_SESSION_KEY);
     }
@@ -31,11 +43,13 @@ export function SalesLogin({ salesPersons = [], invoices = [], onLogout }) {
     const person = salesPersons.find((item) => String(item.mobile || "").trim() === mobile && String(item.pin || "").trim() === pin && item.is_active !== false);
     if (!person) return setMessage("Invalid mobile number or PIN.");
     setSalesPerson(person);
+    saveRoleSession("sales", person);
     localStorage.setItem(SALES_SESSION_KEY, JSON.stringify({ id: person.id }));
     setLogin({ mobile: "", pin: "" });
   }
 
   function logout() {
+    clearRoleSession();
     localStorage.removeItem(SALES_SESSION_KEY);
     setSalesPerson(null);
     onLogout?.();

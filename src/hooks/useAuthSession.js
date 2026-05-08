@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
+import { getRoleSession, roleToAuthUser } from "../utils/roleSession";
 
 export function useAuthSession({ onSignedIn, onSignedOut } = {}) {
   const [authUser, setAuthUser] = useState(null);
@@ -11,6 +12,9 @@ export function useAuthSession({ onSignedIn, onSignedOut } = {}) {
       if (data?.session?.user) {
         setAuthUser(data.session.user);
         onSignedIn?.(data.session.user);
+      } else {
+        const roleUser = roleToAuthUser(getRoleSession()?.role);
+        if (roleUser) setAuthUser(roleUser);
       }
       setAuthLoading(false);
     }
@@ -22,6 +26,11 @@ export function useAuthSession({ onSignedIn, onSignedOut } = {}) {
         setAuthUser(session.user);
         onSignedIn?.(session.user);
       } else {
+        const roleUser = roleToAuthUser(getRoleSession()?.role);
+        if (roleUser) {
+          setAuthUser(roleUser);
+          return;
+        }
         setAuthUser(null);
         onSignedOut?.();
       }

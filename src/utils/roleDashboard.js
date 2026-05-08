@@ -23,7 +23,7 @@ export function isRecentCompletedJob(job, booking, now = new Date()) {
   if (!raw) return false;
   const time = new Date(raw).getTime();
   if (Number.isNaN(time)) return false;
-  return now.getTime() - time <= 24 * 60 * 60 * 1000;
+  return now.getTime() - time <= 48 * 60 * 60 * 1000;
 }
 
 export function getLocalDateKey(value = new Date()) {

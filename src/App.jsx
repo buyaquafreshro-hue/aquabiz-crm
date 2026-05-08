@@ -1,5 +1,5 @@
 
-import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import "./index.css";
 import { LoginScreen } from "./components/auth";
 import { TopBar } from "./components/TopBar";
@@ -9,6 +9,7 @@ import { useAppData } from "./hooks/useAppData";
 import { useAuthSession } from "./hooks/useAuthSession";
 import { createBackup, downloadBackupFile, restoreBackupData } from "./services/backupService";
 import { calculateDashboardStats } from "./utils/dashboardStats";
+import { clearRoleSession, getRoleSession, roleToAuthUser } from "./utils/roleSession";
 import { isSuccessToast, useAutoHideMessage } from "./utils/toastUtils";
 
 const Dashboard = lazy(() => import("./pages/Dashboard").then((module) => ({ default: module.Dashboard })));
@@ -45,6 +46,39 @@ function PageLoader() {
   );
 }
 
+const ADMIN_PAGE_KEY = "aquabiz_admin_last_page";
+const ADMIN_RESTORABLE_PAGES = new Set([
+  "dashboard",
+  "booking",
+  "jobs",
+  "openJobs",
+  "completedJobs",
+  "technicianParts",
+  "inventory",
+  "plans",
+  "sale",
+  "leads",
+  "collections",
+  "reminders",
+  "reports",
+  "customers",
+  "customerHistory",
+  "business",
+  "invoices",
+  "settings",
+  "technicianTracking",
+  "expenses",
+  "cashbook",
+  "emi",
+  "bom",
+  "payroll",
+]);
+
+function getSavedAdminPage() {
+  const savedPage = localStorage.getItem(ADMIN_PAGE_KEY);
+  return ADMIN_RESTORABLE_PAGES.has(savedPage) ? savedPage : "dashboard";
+}
+
 export default function App() {
   const [page, setPage] = useState("login");
   const [reportFilter, setReportFilter] = useState("all");
@@ -54,7 +88,7 @@ export default function App() {
   const [globalMessage, setGlobalMessage] = useState("");
   useAutoHideMessage(globalMessage, setGlobalMessage);
   const handleSignedIn = useCallback(() => {
-    setPage("dashboard");
+    setPage(getSavedAdminPage());
   }, []);
   const handleSignedOut = useCallback(() => {
     setPage("login");
@@ -98,6 +132,22 @@ export default function App() {
     loading,
     loadAll,
   } = useAppData({ onLanguageChange: setLanguage });
+
+  useEffect(() => {
+    if (authLoading) return;
+    const roleSession = getRoleSession();
+    const roleUser = roleToAuthUser(roleSession?.role);
+    if (!roleUser) return;
+    if (authUser && authUser.id !== roleUser.id) return;
+
+    const timer = window.setTimeout(() => {
+      if (!authUser) setAuthUser(roleUser);
+      if (roleSession.role === "technician") setPage("technician");
+      if (roleSession.role === "telecaller") setPage("telecaller");
+      if (roleSession.role === "sales") setPage("sales");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [authLoading, authUser, setAuthUser]);
 
 
   async function downloadBackup() {
@@ -157,6 +207,16 @@ export default function App() {
     [bookings, jobs, customersCount, inventory, coverages, invoices, leads]
   );
 
+  const isTechnicianMode = authUser?.id === "technician-mode";
+  const isTelecallerMode = authUser?.id === "telecaller-mode";
+  const isSalesMode = authUser?.id === "sales-mode";
+
+  useEffect(() => {
+    if (!authUser || isTechnicianMode || isTelecallerMode || isSalesMode) return;
+    if (!ADMIN_RESTORABLE_PAGES.has(page)) return;
+    localStorage.setItem(ADMIN_PAGE_KEY, page);
+  }, [authUser, isTechnicianMode, isTelecallerMode, isSalesMode, page]);
+
   
   if (authLoading) {
     return (
@@ -174,7 +234,7 @@ export default function App() {
       <LoginScreen
         onAdminLogin={(user) => {
           setAuthUser(user);
-          setPage("dashboard");
+          setPage(getSavedAdminPage());
         }}
         onTechnicianOpen={() => {
           setAuthUser({ id: "technician-mode", email: "technician@aquabiz.local" });
@@ -192,10 +252,6 @@ export default function App() {
     );
   }
 
-  const isTechnicianMode = authUser?.id === "technician-mode";
-  const isTelecallerMode = authUser?.id === "telecaller-mode";
-  const isSalesMode = authUser?.id === "sales-mode";
-
   if (isTechnicianMode) {
     return (
       <div className="app-shell technician-only-shell">
@@ -208,6 +264,7 @@ export default function App() {
           authUser={authUser}
           businessSettings={businessSettings}
           onLocalLogout={() => {
+            clearRoleSession();
             setAuthUser(null);
             setPage("login");
           }}
@@ -227,8 +284,10 @@ export default function App() {
             invoices={invoices}
             amcPlans={amcPlans}
             products={products}
+            salesPersons={salesPersons}
             businessSettings={businessSettings}
             onUpdated={loadAll}
+            onLogout={() => { clearRoleSession(); setAuthUser(null); setPage("login"); }}
           />
           </Suspense>
         </main>
@@ -248,6 +307,7 @@ export default function App() {
           authUser={authUser}
           businessSettings={businessSettings}
           onLocalLogout={() => {
+            clearRoleSession();
             setAuthUser(null);
             setPage("login");
           }}
@@ -267,6 +327,7 @@ export default function App() {
             jobs={jobs}
             invoices={invoices}
             onUpdated={loadAll}
+            onLogout={() => { clearRoleSession(); setAuthUser(null); setPage("login"); }}
           />
           </Suspense>
         </main>
@@ -295,7 +356,7 @@ export default function App() {
 
         <main className="main-content">
           <Suspense fallback={<PageLoader />}>
-            <SalesLogin salesPersons={salesPersons} invoices={invoices} onLogout={() => { setAuthUser(null); setPage("login"); }} />
+            <SalesLogin salesPersons={salesPersons} invoices={invoices} onLogout={() => { clearRoleSession(); setAuthUser(null); setPage("login"); }} />
           </Suspense>
         </main>
       </div>
@@ -313,6 +374,7 @@ export default function App() {
         authUser={authUser}
         businessSettings={businessSettings}
         onLocalLogout={() => {
+          clearRoleSession();
           setAuthUser(null);
           setPage("login");
         }}
@@ -353,7 +415,7 @@ export default function App() {
         {page === "technicianParts" && <TechnicianPartsPage technicians={technicians} technicianParts={technicianParts} inventory={inventory} onUpdated={loadAll} />}
         {page === "technician" && <TechnicianPanel jobs={jobs} bookings={bookings} technicians={technicians} technicianParts={technicianParts} inventory={inventory} coverages={coverages} invoices={invoices}
             amcPlans={amcPlans}
-            products={products} businessSettings={businessSettings} onUpdated={loadAll} />}
+            products={products} salesPersons={salesPersons} businessSettings={businessSettings} onUpdated={loadAll} onLogout={() => { clearRoleSession(); setAuthUser(null); setPage("login"); }} />}
         {page === "inventory" && <InventoryPage categories={categories} inventory={inventory} inventoryPurchases={inventoryPurchases} onUpdated={loadAll} />}
         {page === "plans" && <PlansPage categories={categories} inventory={inventory} amcPlans={amcPlans} products={products} onUpdated={loadAll} />}
         {page === "sale" && <AmcSalePage amcPlans={amcPlans} products={products} coverages={coverages} invoices={invoices} salesPersons={salesPersons} onUpdated={loadAll} />}

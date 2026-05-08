@@ -54,6 +54,37 @@ export function BookingMini({ booking }) {
   );
 }
 
+export function DetailDrawer({ title, subtitle, fields = [], children, onClose }) {
+  if (!title) return null;
+
+  return (
+    <div className="detail-drawer-backdrop" role="presentation" onClick={onClose}>
+      <section className="detail-drawer" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
+        <div className="panel-head">
+          <div>
+            <h3>{title}</h3>
+            {subtitle && <p className="muted">{subtitle}</p>}
+          </div>
+          <button className="ghost-btn small" type="button" onClick={onClose}>Close</button>
+        </div>
+
+        {fields.length > 0 && (
+          <div className="detail-grid">
+            {fields.map((field) => (
+              <div key={field.label}>
+                <span>{field.label}</span>
+                <strong>{field.value || "-"}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {children}
+      </section>
+    </div>
+  );
+}
+
 export function BottomNav({ page, setPage }) {
   const items = [
     ["dashboard", "Dashboard", "D"],

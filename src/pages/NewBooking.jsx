@@ -56,6 +56,7 @@ export function NewBooking({ services, technicians, customers = [], initialLead 
   }, [form.mobile, customers]);
 
   async function saveBooking() {
+    if (saving) return;
     setMessage("");
     if (!form.name.trim() || !form.mobile.trim() || !form.address.trim()) {
       setMessage("Name, mobile, and address are required.");
@@ -104,9 +105,11 @@ export function NewBooking({ services, technicians, customers = [], initialLead 
       await supabase.from("leads").update({ status: "Converted" }).eq("id", initialLead.id);
     }
 
-    setMessage("Booking saved successfully.");
+    setForm({ ...emptyBooking, serviceId: cleanServices[0]?.id || "" });
+    setMatchedCustomer(null);
+    setMessage("Booking created successfully");
     setSaving(false);
-    await onDone();
+    await onDone?.();
   }
 
   return (
@@ -192,7 +195,7 @@ export function NewBooking({ services, technicians, customers = [], initialLead 
 
         {message && <div className={isSuccessToast(message) ? "success-box" : "error-box"}>{message}</div>}
 
-        <button className="primary-btn big booking-confirm-btn" onClick={saveBooking} disabled={saving}>
+        <button className="primary-btn big booking-confirm-btn" onClick={saveBooking} disabled={saving} type="button">
           {saving ? "Saving..." : "Confirm Booking"}
         </button>
       </section>

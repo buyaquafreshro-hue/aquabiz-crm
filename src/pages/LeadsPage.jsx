@@ -14,6 +14,7 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
   const [openLeadId, setOpenLeadId] = useState(null);
   const [matchedCustomer, setMatchedCustomer] = useState(null);
   const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
   useAutoHideMessage(message, setMessage);
 
   useEffect(() => {
@@ -39,6 +40,7 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
   }, [form.mobile, customers]);
 
   async function saveLead() {
+    if (saving) return;
     setMessage("");
     const cleanMobile = String(form.mobile || "").replace(/\D/g, "").slice(-10);
     if (cleanMobile.length !== 10) {
@@ -53,6 +55,7 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
     const assignedTelecallerId = loggedInTelecaller?.id || form.assigned_telecaller_id || null;
     const selectedTelecaller = loggedInTelecaller || telecallers.find((t) => String(t.id) === String(assignedTelecallerId));
 
+    setSaving(true);
     const { error } = await supabase.from("leads").insert([{
       customer_name: form.customer_name.trim(),
       mobile: cleanMobile,
@@ -72,13 +75,16 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
 
     if (error) {
       setMessage(error.message);
+      setSaving(false);
       return;
     }
 
     setForm({ ...emptyLead, address: "", area: "", service_need: "" });
     setPhoneChecked(false);
+    setMatchedCustomer(null);
     setShowLeadForm(!loggedInTelecaller);
-    setMessage("Lead saved.");
+    setMessage("Lead created successfully");
+    setSaving(false);
     await onUpdated();
   }
 
@@ -238,11 +244,13 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
           </select>}
           <input placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           {message && (
-            <div className={message.includes("saved") || message.includes("assigned") || message.includes("removed") ? "success-box" : "error-box"}>
+            <div className={message.includes("saved") || message.includes("created") || message.includes("assigned") || message.includes("removed") ? "success-box" : "error-box"}>
               {message}
             </div>
           )}
-          <button className="primary-btn big" onClick={saveLead}>Save Lead</button>
+          <button className="primary-btn big" onClick={saveLead} disabled={saving}>
+            {saving ? "Saving..." : "Save Lead"}
+          </button>
             </>
           )}
         </div>
