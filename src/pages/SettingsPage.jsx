@@ -15,6 +15,12 @@ function Accordion({ title, count, defaultOpen = false, children }) {
   );
 }
 
+const DEFAULT_SERVICE_RATES = [
+  { name: "Online", price: 99 },
+  { name: "COD", price: 249 },
+  { name: "Installation", price: 399 },
+];
+
 export function SettingsPage({ services, setPage, onUpdated }) {
   const [serviceForm, setServiceForm] = useState({ name: "", price: "" });
   const [serviceEdit, setServiceEdit] = useState({});
@@ -78,6 +84,23 @@ export function SettingsPage({ services, setPage, onUpdated }) {
     if (error) return setMessage(error.message);
     setServiceForm({ name: "", price: "" });
     setMessage("Service added.");
+    await onUpdated();
+  }
+
+  async function applyDefaultServiceRates() {
+    setMessage("");
+    for (const service of DEFAULT_SERVICE_RATES) {
+      const existing = services.find((item) => String(item.name || "").trim().toLowerCase() === service.name.toLowerCase());
+      const response = existing?.id
+        ? await supabase.from("services").update({ price: service.price }).eq("id", existing.id)
+        : await supabase.from("services").insert([service]);
+
+      if (response.error) {
+        setMessage(response.error.message);
+        return;
+      }
+    }
+    setMessage("Default service rates saved: Online ₹99, COD ₹249, Installation ₹399.");
     await onUpdated();
   }
 
@@ -244,6 +267,10 @@ export function SettingsPage({ services, setPage, onUpdated }) {
 
       <section className="panel">
         <h3>Services</h3>
+        <div className="row-actions">
+          <button className="ghost-btn small" type="button" onClick={applyDefaultServiceRates}>Set Default Rates</button>
+          <p className="helper">Defaults: Online ₹99, COD ₹249, Installation ₹399. You can edit each rate below anytime.</p>
+        </div>
         <Accordion title="Already Added Services" count={cleanServices.length} defaultOpen>
           {cleanServices.length === 0 ? <p className="muted">No services added.</p> : cleanServices.map((service) => {
             const draft = serviceDraft(service);

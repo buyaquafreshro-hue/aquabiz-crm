@@ -4,7 +4,7 @@ import { StatCard } from "../components/shared";
 import { getText } from "../constants/text";
 import { formatINR, isActive, todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl, reminderMessage } from "../utils/whatsappUtils";
-export function Dashboard({ stats, bookings, jobs, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, leads = [], dataErrors = [], onUpdated, setPage, setReportFilter, language }) {
+export function Dashboard({ stats, services = [], bookings, jobs, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, leads = [], dataErrors = [], onUpdated, setPage, setReportFilter, language }) {
   const [invoiceJobId, setInvoiceJobId] = useState(null);
   const [openBookingId, setOpenBookingId] = useState(null);
   const recent = bookings.slice(0, 5);
@@ -188,6 +188,7 @@ export function Dashboard({ stats, bookings, jobs, technicians, technicianParts 
                     <InvoiceBuilder
                       job={job}
                       booking={b}
+                      services={services}
                       inventory={inventory}
                       technicianParts={technicianParts}
                       coverages={coverages}

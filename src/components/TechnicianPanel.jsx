@@ -51,7 +51,7 @@ function clearDutySession() {
   localStorage.removeItem(TECH_DUTY_SESSION_KEY);
 }
 
-export function TechnicianPanel({ jobs, bookings, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, onUpdated, onLogout }) {
+export function TechnicianPanel({ jobs, bookings, services = [], technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, onUpdated, onLogout }) {
   const [login, setLogin] = useState({ mobile: "", pin: "" });
   const [loggedInTech, setLoggedInTech] = useState(null);
   const [invoiceJobId, setInvoiceJobId] = useState(null);
@@ -438,6 +438,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
                       key={`${job.id}-${completionInvoiceType}`}
                       job={job}
                       booking={booking}
+                      services={services}
                       inventory={inventory}
                       technicianParts={technicianParts}
                       coverages={coverages}
@@ -461,6 +462,7 @@ export function TechnicianPanel({ jobs, bookings, technicians, technicianParts =
                   <InvoiceBuilder
                     job={job}
                     booking={booking}
+                    services={services}
                     inventory={inventory}
                     technicianParts={technicianParts}
                     coverages={coverages}

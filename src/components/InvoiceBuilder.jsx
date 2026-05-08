@@ -7,8 +7,10 @@ import { supabase } from "../supabaseClient";
 import { addDays, coverageLabel, formatINR, isActive, itemCoveredByRecord, nextMonthlyDate, todayISO } from "../utils/appUtils";
 import { calculateSalesIncentive } from "../utils/salesUtils";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
-export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], coverages, invoices, amcPlans = [], products = [], salesPersons = [], businessSettings = {}, defaultInvoiceType = "service", completionMode = false, onClose, onDone }) {
+export function InvoiceBuilder({ job, booking, services = [], inventory, technicianParts = [], coverages, invoices, amcPlans = [], products = [], salesPersons = [], businessSettings = {}, defaultInvoiceType = "service", completionMode = false, onClose, onDone }) {
   const [invoiceType, setInvoiceType] = useState(defaultInvoiceType);
+  const matchingService = services.find((service) => String(service.name || "").trim().toLowerCase() === String(booking?.service_type || "").trim().toLowerCase());
+  const defaultServiceCharge = Number(matchingService?.price ?? booking?.booking_amount ?? 0);
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [selectedProductId, setSelectedProductId] = useState("");
   const [discount, setDiscount] = useState("0");
@@ -47,7 +49,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
   const isZeroInvoice = invoiceType === "zero";
   const serviceCovered = invoiceType === "service" && activeCoverage && Number(activeCoverage.used_visits || 0) < Number(activeCoverage.free_visits || 0);
 
-  const baseServiceCharge = Number(booking?.booking_amount || 0);
+  const baseServiceCharge = Number(defaultServiceCharge || 0);
   const serviceCharge = invoiceType === "service" ? (serviceCovered ? 0 : baseServiceCharge) : 0;
 
   const planAmount = invoiceType === "amc" ? Number(selectedPlan?.price || 0) : 0;
@@ -494,6 +496,7 @@ export function InvoiceBuilder({ job, booking, inventory, technicianParts = [], 
             <strong>Service Charge</strong>
             <strong>{formatINR(serviceCharge)}</strong>
           </div>
+          <p className="helper">Service charge is controlled from More &gt; Admin Settings &gt; Services for {booking?.service_type || "this service"}.</p>
         </>
       )}
 

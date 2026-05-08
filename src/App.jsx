@@ -277,6 +277,7 @@ export default function App() {
           <TechnicianPanel
             jobs={jobs}
             bookings={bookings}
+            services={services}
             technicians={technicians}
             technicianParts={technicianParts}
             inventory={inventory}
@@ -387,6 +388,7 @@ export default function App() {
         {page === "dashboard" && (
           <Dashboard
             stats={stats}
+            services={services}
             bookings={bookings}
             jobs={jobs}
             technicians={technicians}
@@ -409,13 +411,13 @@ export default function App() {
         {page === "booking" && <NewBooking services={services} technicians={technicians} customers={customers} initialLead={bookingDraft} onDone={async () => { setBookingDraft(null); await loadAll(); setPage("jobs"); }} />}
         {page === "jobs" && <JobsPage bookings={bookings} jobs={jobs} technicians={technicians} technicianParts={technicianParts} inventory={inventory} coverages={coverages} invoices={invoices}
             amcPlans={amcPlans}
-            products={products} salesPersons={salesPersons} businessSettings={businessSettings} onUpdated={loadAll} setPage={setPage} />}
+            products={products} services={services} salesPersons={salesPersons} businessSettings={businessSettings} onUpdated={loadAll} setPage={setPage} />}
         {page === "openJobs" && <JobListPage title="Open Jobs" type="open" bookings={bookings} jobs={jobs} technicians={technicians} coverages={coverages} setPage={setPage} />}
         {page === "completedJobs" && <JobListPage title="Completed Jobs" type="completed" bookings={bookings} jobs={jobs} technicians={technicians} coverages={coverages} setPage={setPage} />}
         {page === "technicianParts" && <TechnicianPartsPage technicians={technicians} technicianParts={technicianParts} inventory={inventory} onUpdated={loadAll} />}
         {page === "technician" && <TechnicianPanel jobs={jobs} bookings={bookings} technicians={technicians} technicianParts={technicianParts} inventory={inventory} coverages={coverages} invoices={invoices}
             amcPlans={amcPlans}
-            products={products} salesPersons={salesPersons} businessSettings={businessSettings} onUpdated={loadAll} onLogout={() => { clearRoleSession(); setAuthUser(null); setPage("login"); }} />}
+            products={products} services={services} salesPersons={salesPersons} businessSettings={businessSettings} onUpdated={loadAll} onLogout={() => { clearRoleSession(); setAuthUser(null); setPage("login"); }} />}
         {page === "inventory" && <InventoryPage categories={categories} inventory={inventory} inventoryPurchases={inventoryPurchases} onUpdated={loadAll} />}
         {page === "plans" && <PlansPage categories={categories} inventory={inventory} amcPlans={amcPlans} products={products} onUpdated={loadAll} />}
         {page === "sale" && <AmcSalePage amcPlans={amcPlans} products={products} coverages={coverages} invoices={invoices} salesPersons={salesPersons} onUpdated={loadAll} />}

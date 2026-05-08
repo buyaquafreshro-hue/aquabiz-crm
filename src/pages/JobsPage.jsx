@@ -30,7 +30,7 @@ function JobMeta({ booking }) {
   );
 }
 
-export function JobsPage({ bookings, jobs, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, onUpdated, setPage }) {
+export function JobsPage({ bookings, jobs, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, services = [], salesPersons = [], businessSettings, onUpdated, setPage }) {
   const [selectedTech, setSelectedTech] = useState({});
   const [reassignTech, setReassignTech] = useState({});
   const [reassignJobId, setReassignJobId] = useState(null);
@@ -226,6 +226,7 @@ export function JobsPage({ bookings, jobs, technicians, technicianParts = [], in
                   {type === "unassigned" && invoiceBookingId === booking.id && (
                     <InvoiceBuilder
                       booking={booking}
+                      services={services}
                       inventory={inventory}
                       technicianParts={technicianParts}
                       coverages={coverages}
@@ -274,13 +275,13 @@ export function JobsPage({ bookings, jobs, technicians, technicianParts = [], in
                             <button className="ghost-btn small" onClick={() => setCompletionInvoiceType("zero")}>Generate ₹0 Invoice</button>
                             <button className="ghost-btn small" onClick={() => { setCompletionJobId(null); setMessage("Job was not closed because invoice was not generated."); }}>Cancel</button>
                           </div>
-                          <InvoiceBuilder key={`${job.id}-${completionInvoiceType}`} job={job} booking={booking} inventory={inventory} technicianParts={technicianParts} coverages={coverages} invoices={invoices}
+                          <InvoiceBuilder key={`${job.id}-${completionInvoiceType}`} job={job} booking={booking} services={services} inventory={inventory} technicianParts={technicianParts} coverages={coverages} invoices={invoices}
                             amcPlans={amcPlans}
                             products={products} salesPersons={salesPersons} businessSettings={businessSettings} defaultInvoiceType={completionInvoiceType} completionMode onClose={() => setCompletionJobId(null)} onDone={async () => { setCompletionJobId(null); await onUpdated(); }} />
                         </div>
                       )}
                       {invoiceJobId === job.id && (
-                        <InvoiceBuilder job={job} booking={booking} inventory={inventory} technicianParts={technicianParts} coverages={coverages} invoices={invoices}
+                        <InvoiceBuilder job={job} booking={booking} services={services} inventory={inventory} technicianParts={technicianParts} coverages={coverages} invoices={invoices}
                           amcPlans={amcPlans}
                           products={products} salesPersons={salesPersons} businessSettings={businessSettings} onClose={() => setInvoiceJobId(null)} onDone={async () => { setInvoiceJobId(null); await onUpdated(); }} />
                       )}
