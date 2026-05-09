@@ -1,4 +1,4 @@
-import { formatINR, getDueAmount, getPaidAmount, normalizeMobile, todayISO } from "./appUtils";
+import { formatINR, getCurrentEmiPayableAmount, getDueAmount, getEmiPenaltyAmount, getEmiPayableDue, getPaidAmount, normalizeMobile, todayISO } from "./appUtils";
 
 export function buildWhatsAppUrl(mobile, message) {
   const cleanMobile = normalizeMobile(mobile);
@@ -13,14 +13,15 @@ export function customerGreetingMessage(customerName = "", businessName = "AquaB
 export function paymentReminderMessage(invoice, businessSettings = {}) {
   const businessName = businessSettings?.business_name || "AquaBiz";
   const dueDate = invoice?.emi_next_due_date || invoice?.collection_follow_up_date || todayISO();
+  const emiPenalty = invoice?.payment_method === "emi" ? getEmiPenaltyAmount(invoice) : 0;
   const emiLine = invoice?.payment_method === "emi"
-    ? `\nMonthly EMI: ${formatINR(invoice.emi_monthly_amount || invoice.emi_amount)}`
+    ? `\nEMI Payable: ${formatINR(getCurrentEmiPayableAmount(invoice) || invoice.emi_monthly_amount || invoice.emi_amount)}${emiPenalty > 0 ? `\nLate Penalty: ${formatINR(emiPenalty)}` : ""}`
     : "";
   const upiLine = businessSettings?.upi_id ? `\nUPI ID: ${businessSettings.upi_id}` : "";
   return [
     `Namaste ${invoice?.customer_name || ""},`,
     `${businessName} payment reminder.`,
-    `Pending Amount: ${formatINR(getDueAmount(invoice))}`,
+    `Pending Amount: ${formatINR(invoice?.payment_method === "emi" ? getEmiPayableDue(invoice) : getDueAmount(invoice))}`,
     `Due Date: ${dueDate}${emiLine}${upiLine}`,
     "Please pay at your convenience. Thank you.",
   ].join("\n");
@@ -29,13 +30,15 @@ export function paymentReminderMessage(invoice, businessSettings = {}) {
 export function emiReminderMessage(invoice, businessSettings = {}) {
   const businessName = businessSettings?.business_name || "AquaBiz";
   const upiLine = businessSettings?.upi_id || invoice?.upi_id ? `\nUPI ID: ${invoice?.upi_id || businessSettings.upi_id}` : "";
+  const emiPenalty = getEmiPenaltyAmount(invoice);
   return [
     `Namaste ${invoice?.customer_name || ""},`,
     `${businessName} EMI reminder.`,
-    `EMI Amount: ${formatINR(invoice?.emi_amount || invoice?.emi_monthly_amount || invoice?.invoice_print_qr_amount)}`,
+    `EMI Payable: ${formatINR(getCurrentEmiPayableAmount(invoice) || invoice?.emi_amount || invoice?.emi_monthly_amount || invoice?.invoice_print_qr_amount)}`,
+    emiPenalty > 0 ? `Late Penalty: ${formatINR(emiPenalty)}` : "",
     `Due Date: ${invoice?.emi_next_due_date || todayISO()}${upiLine}`,
     "Please ignore if already paid. Thank you.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 export function emiReceiptMessage(invoice, payment, businessSettings = {}) {

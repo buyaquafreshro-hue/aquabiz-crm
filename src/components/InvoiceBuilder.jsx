@@ -4,7 +4,7 @@ import { FormCard } from "./shared";
 import { PartsTable, StockBadge } from "./PartsTable";
 import { completeJobWithInvoice } from "../services/jobAssignments";
 import { supabase } from "../supabaseClient";
-import { addDays, coverageLabel, formatINR, isActive, itemCoveredByRecord, nextMonthlyDate, todayISO } from "../utils/appUtils";
+import { addDays, coverageLabel, formatINR, isActive, itemCoveredByRecord, nextEmiDueDate, nextMonthlyDate, todayISO } from "../utils/appUtils";
 import { calculateSalesIncentive } from "../utils/salesUtils";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 export function InvoiceBuilder({ job, booking, services = [], inventory, technicianParts = [], coverages, invoices, amcPlans = [], products = [], salesPersons = [], businessSettings = {}, defaultInvoiceType = "service", completionMode = false, onClose, onDone }) {
@@ -22,7 +22,7 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
   const [cashAmount, setCashAmount] = useState("0");
   const [upiAmount, setUpiAmount] = useState("0");
   const [emiMonths, setEmiMonths] = useState("6");
-  const [emiStartDate, setEmiStartDate] = useState(todayISO());
+  const [emiStartDate, setEmiStartDate] = useState(nextEmiDueDate(todayISO()));
   const [emiNotes, setEmiNotes] = useState("");
   const [rentalDeposit, setRentalDeposit] = useState("0");
   const [rentalMonthly, setRentalMonthly] = useState("0");
@@ -94,9 +94,11 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
   const invoicePrintQrAmount = isEmiInvoice ? monthlyEmi : upiAmountNumber;
   const salesIncentiveAmount = invoiceType === "amc" || invoiceType === "new_sale" ? calculateSalesIncentive(total, selectedSalesPerson) : 0;
   const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(upiName)}&am=${encodeURIComponent(upfrontUpiQrAmount.toFixed(2))}&cu=INR&tn=${encodeURIComponent("AquaBiz Invoice Payment")}`;
+  const firstEmiDueDate = nextEmiDueDate(todayISO());
 
   function startEmiMode() {
     setPaymentMode("emi");
+    setEmiStartDate(firstEmiDueDate);
     if (invoiceType === "new_sale" && selectedProduct && paidAmount <= 0) {
       setCashAmount(String(minimumDownPayment || 0));
       setUpiAmount("0");
@@ -278,8 +280,8 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
           emi_advance_amount: paymentMode === "emi" ? paidAmount : 0,
           emi_monthly_amount: paymentMode === "emi" ? monthlyEmi : 0,
           emi_months: paymentMode === "emi" ? safeEmiMonths : 0,
-          emi_start_date: paymentMode === "emi" ? emiStartDate : null,
-          emi_next_due_date: paymentMode === "emi" ? emiStartDate : null,
+          emi_start_date: paymentMode === "emi" ? firstEmiDueDate : null,
+          emi_next_due_date: paymentMode === "emi" ? firstEmiDueDate : null,
           emi_notes: paymentMode === "emi" ? emiNotes.trim() : "",
           rental_security_deposit: invoiceType === "rental" ? Number(rentalDeposit || 0) : 0,
           rental_monthly_rent: invoiceType === "rental" ? Number(rentalMonthly || 0) : 0,
@@ -441,8 +443,8 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
           emi_advance_amount: paidAmount,
           emi_monthly_amount: monthlyEmi,
           emi_months: safeEmiMonths,
-          emi_start_date: emiStartDate,
-          emi_next_due_date: emiStartDate,
+          emi_start_date: firstEmiDueDate,
+          emi_next_due_date: firstEmiDueDate,
           emi_notes: emiNotes.trim(),
         })
         .eq("id", booking.id);
@@ -688,10 +690,10 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
             )}
             <div className="two-col">
               <input placeholder="No. of EMI months" type="number" value={emiMonths} onChange={(e) => setEmiMonths(e.target.value)} />
-              <input type="date" value={emiStartDate} onChange={(e) => setEmiStartDate(e.target.value)} />
+              <input type="date" value={emiStartDate} readOnly />
             </div>
             <input placeholder="EMI notes" value={emiNotes} onChange={(e) => setEmiNotes(e.target.value)} />
-            <div className="muted-box">Next EMI Reminder: {emiStartDate} | Monthly EMI: {formatINR(monthlyEmi)}</div>
+            <div className="muted-box">Next EMI Reminder: {firstEmiDueDate} | Monthly EMI: {formatINR(monthlyEmi)} | Late Penalty: ₹50/day after due date</div>
           </div>
         )}
 

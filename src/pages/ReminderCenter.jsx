@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { StatCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
-import { addDays, formatINR, getDueAmount, isActive, nextMonthlyDate, todayISO } from "../utils/appUtils";
+import { addDays, formatINR, getDueAmount, getEmiPayableDue, getEmiPenaltyAmount, isActive, nextEmiDueDate, nextMonthlyDate, todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl, reminderMessage } from "../utils/whatsappUtils";
 import { useAutoHideMessage } from "../utils/toastUtils";
 export function ReminderCenter({ coverages, invoices, leads, businessSettings = {}, onUpdated }) {
@@ -34,8 +34,8 @@ export function ReminderCenter({ coverages, invoices, leads, businessSettings = 
       customer_name: invoice.customer_name,
       mobile: invoice.mobile,
       due_date: invoice.emi_next_due_date,
-      amount: getDueAmount(invoice),
-      note: `Monthly EMI ${formatINR(invoice.emi_monthly_amount)}`,
+      amount: getEmiPayableDue(invoice),
+      note: `Monthly EMI ${formatINR(invoice.emi_monthly_amount)}${getEmiPenaltyAmount(invoice) > 0 ? ` | Penalty ${formatINR(getEmiPenaltyAmount(invoice))}` : ""}`,
       raw: invoice,
     }));
 
@@ -102,7 +102,7 @@ export function ReminderCenter({ coverages, invoices, leads, businessSettings = 
     } else if (reminder.type === "emi") {
       response = await supabase
         .from("invoices")
-        .update({ emi_next_due_date: nextMonthlyDate(reminder.due_date || todayISO()) })
+        .update({ emi_next_due_date: nextEmiDueDate(reminder.due_date || todayISO()) })
         .eq("id", reminder.source_id);
     } else if (reminder.type === "payment") {
       response = await supabase

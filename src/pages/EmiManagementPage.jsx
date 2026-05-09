@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import { InvoicePaymentForm } from "./CollectionsPage";
 import { supabase } from "../supabaseClient";
-import { formatINR, getDueAmount, getLocalMonthKey, nextMonthlyDate, todayISO } from "../utils/appUtils";
+import { formatINR, getCurrentEmiPayableAmount, getDueAmount, getEmiPenaltyForDueDate, getLocalMonthKey, nextEmiDueDate, todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl, emiReceiptMessage, emiReminderMessage } from "../utils/whatsappUtils";
 import { useAutoHideMessage } from "../utils/toastUtils";
 
@@ -10,10 +10,10 @@ function dateKey(value) {
   return String(value || "").slice(0, 10);
 }
 
-function addMonths(dateString, months) {
+function addEmiMonths(dateString, months) {
   let next = dateString || todayISO();
   for (let index = 0; index < months; index += 1) {
-    next = nextMonthlyDate(next);
+    next = nextEmiDueDate(next);
   }
   return next;
 }
@@ -45,10 +45,12 @@ function buildSchedule(invoice, invoicePayments) {
   let paidPool = payments.reduce((sum, payment) => sum + payment.amount, 0);
 
   return Array.from({ length: months }).map((_, index) => {
-    const dueDate = addMonths(startDate, index);
+    const dueDate = addEmiMonths(startDate, index);
     const paidAmount = Math.min(paidPool, monthlyAmount);
     paidPool = Math.max(paidPool - monthlyAmount, 0);
-    const dueAmount = Math.max(monthlyAmount - paidAmount, 0);
+    const baseDueAmount = Math.max(monthlyAmount - paidAmount, 0);
+    const penaltyAmount = baseDueAmount > 0 ? getEmiPenaltyForDueDate(dueDate) : 0;
+    const dueAmount = baseDueAmount + penaltyAmount;
     const status = dueAmount <= 0
       ? "Paid"
       : paidAmount > 0
@@ -61,9 +63,10 @@ function buildSchedule(invoice, invoicePayments) {
     return {
       number: index + 1,
       dueDate,
-      amount: monthlyAmount,
+      amount: monthlyAmount + penaltyAmount,
       paidAmount,
       dueAmount,
+      penaltyAmount,
       status,
     };
   });
@@ -76,7 +79,7 @@ function whatsappLink(invoice, businessSettings) {
 function buildEmiUpiUri(invoice, businessSettings) {
   const upiId = invoice.upi_id || businessSettings?.upi_id || "";
   const upiName = businessSettings?.upi_name || businessSettings?.business_name || "AquaBiz";
-  const amount = getEmiAmount(invoice);
+  const amount = getCurrentEmiPayableAmount(invoice);
   if (!upiId || amount <= 0) return "";
   const params = new URLSearchParams({
     pa: upiId,
@@ -166,7 +169,7 @@ export function EmiManagementPage({ invoices = [], invoicePayments = [], busines
     const nextUnpaid = schedule.find((row) => row.dueAmount > 0);
     const payments = getEmiPayments(invoice, invoicePayments);
     const paidEmi = payments.reduce((sum, payment) => sum + payment.amount, 0);
-    const dueAmount = getDueAmount(invoice);
+    const dueAmount = getDueAmount(invoice) + Number(nextUnpaid?.penaltyAmount || 0);
     const status = dueAmount <= 0
       ? "Closed"
       : nextUnpaid?.status === "Overdue"
@@ -252,7 +255,7 @@ export function EmiManagementPage({ invoices = [], invoicePayments = [], busines
             <thead>
               <tr>
                 <th>Customer</th>
-                <th>Monthly EMI</th>
+                <th>Current EMI</th>
                 <th>Next Due</th>
                 <th>Balance</th>
                 <th>Status</th>
@@ -266,7 +269,7 @@ export function EmiManagementPage({ invoices = [], invoicePayments = [], busines
                     <strong>{row.invoice.customer_name}</strong>
                     <p className="muted">{row.invoice.mobile}</p>
                   </td>
-                  <td>{formatINR(getEmiAmount(row.invoice))}</td>
+                  <td>{formatINR(getCurrentEmiPayableAmount(row.invoice) || getEmiAmount(row.invoice))}</td>
                   <td>{row.nextUnpaid?.dueDate || "Closed"}</td>
                   <td><strong>{formatINR(row.dueAmount)}</strong></td>
                   <td><span className={row.status === "Overdue" ? "stock-badge out" : row.status === "Closed" ? "stock-badge in" : "stock-badge low"}>{row.status}</span></td>
@@ -320,8 +323,8 @@ export function EmiManagementPage({ invoices = [], invoicePayments = [], busines
             <div className="emi-qr-card">
               <div>
                 <span>Monthly EMI QR</span>
-                <strong>{formatINR(getEmiAmount(selected.invoice))}</strong>
-                <p>Scan to collect current monthly EMI. QR uses Business Settings UPI ID.</p>
+                <strong>{formatINR(getCurrentEmiPayableAmount(selected.invoice) || getEmiAmount(selected.invoice))}</strong>
+                <p>Scan to collect current EMI. Overdue penalty is Rs 50/day after due date.</p>
               </div>
               {selected.dueAmount <= 0 ? (
                 <div className="success-box">EMI is fully closed.</div>
@@ -355,6 +358,7 @@ export function EmiManagementPage({ invoices = [], invoicePayments = [], busines
                   <th>EMI No.</th>
                   <th>Due Date</th>
                   <th>Amount</th>
+                  <th>Penalty</th>
                   <th>Paid</th>
                   <th>Pending</th>
                   <th>Status</th>
@@ -366,6 +370,7 @@ export function EmiManagementPage({ invoices = [], invoicePayments = [], busines
                     <td>{row.number}</td>
                     <td>{row.dueDate}</td>
                     <td>{formatINR(row.amount)}</td>
+                    <td>{formatINR(row.penaltyAmount)}</td>
                     <td>{formatINR(row.paidAmount)}</td>
                     <td>{formatINR(row.dueAmount)}</td>
                     <td><span className={row.status === "Overdue" ? "stock-badge out" : row.status === "Paid" ? "stock-badge in" : "stock-badge low"}>{row.status}</span></td>

@@ -79,6 +79,40 @@ export function nextMonthlyDate(dateString) {
   return `${year}-${month}-${day}`;
 }
 
+export const EMI_DAILY_PENALTY = 50;
+
+export function nextEmiDueDate(dateString) {
+  const d = new Date((dateString || todayISO()) + "T00:00:00");
+  const due = new Date(d.getFullYear(), d.getMonth() + 1, 10);
+  const year = due.getFullYear();
+  const month = String(due.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}-10`;
+}
+
+export function getEmiPenaltyForDueDate(dueDate, asOfDate = todayISO()) {
+  if (!dueDate || String(asOfDate) <= String(dueDate)) return 0;
+  const due = new Date(String(dueDate).slice(0, 10) + "T00:00:00");
+  const asOf = new Date(String(asOfDate).slice(0, 10) + "T00:00:00");
+  const daysLate = Math.max(Math.floor((asOf.getTime() - due.getTime()) / 86400000), 0);
+  return daysLate * EMI_DAILY_PENALTY;
+}
+
+export function getEmiPenaltyAmount(invoice, asOfDate = todayISO()) {
+  if (invoice?.payment_method !== "emi" || getDueAmount(invoice) <= 0) return 0;
+  return getEmiPenaltyForDueDate(invoice.emi_next_due_date, asOfDate);
+}
+
+export function getEmiPayableDue(invoice, asOfDate = todayISO()) {
+  return getDueAmount(invoice) + getEmiPenaltyAmount(invoice, asOfDate);
+}
+
+export function getCurrentEmiPayableAmount(invoice, asOfDate = todayISO()) {
+  const monthly = Number(invoice?.emi_monthly_amount || invoice?.emi_amount || invoice?.invoice_print_qr_amount || 0);
+  const baseDue = getDueAmount(invoice);
+  if (baseDue <= 0) return 0;
+  return Math.min(monthly || baseDue, baseDue) + getEmiPenaltyAmount(invoice, asOfDate);
+}
+
 export function generateOtp() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }

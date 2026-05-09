@@ -2,7 +2,7 @@ import { useState } from "react";
 import { emptyPayment } from "../constants/defaults";
 import { DetailDrawer, StatCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
-import { formatINR, getDueAmount, getPaidAmount, nextMonthlyDate, todayISO } from "../utils/appUtils";
+import { formatINR, getDueAmount, getEmiPayableDue, getEmiPenaltyAmount, getPaidAmount, nextEmiDueDate, todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl, paymentReminderMessage } from "../utils/whatsappUtils";
 import { useAutoHideMessage } from "../utils/toastUtils";
 export function InvoicePaymentForm({ invoice, onClose, onDone }) {
@@ -14,9 +14,16 @@ export function InvoicePaymentForm({ invoice, onClose, onDone }) {
   const upi = Number(form.upi_amount || 0);
   const newPayment = cash + upi;
   const oldPaid = getPaidAmount(invoice);
-  const oldDue = getDueAmount(invoice);
-  const updatedPaid = oldPaid + newPayment;
-  const updatedDue = Math.max(Number(invoice.total_amount || 0) - updatedPaid, 0);
+  const oldBaseDue = getDueAmount(invoice);
+  const paymentDate = form.payment_date || todayISO();
+  const emiPenalty = invoice.payment_method === "emi" ? getEmiPenaltyAmount(invoice, paymentDate) : 0;
+  const oldDue = invoice.payment_method === "emi" ? getEmiPayableDue(invoice, paymentDate) : oldBaseDue;
+  const principalPayment = invoice.payment_method === "emi" ? Math.min(Math.max(newPayment - emiPenalty, 0), oldBaseDue) : newPayment;
+  const currentBaseEmiDue = invoice.payment_method === "emi"
+    ? Math.min(Number(invoice.emi_monthly_amount || invoice.emi_amount || oldBaseDue), oldBaseDue)
+    : 0;
+  const updatedPaid = oldPaid + principalPayment;
+  const updatedDue = Math.max(oldBaseDue - principalPayment, 0);
   const updatedStatus = updatedDue <= 0 ? "Paid" : updatedPaid > 0 ? "Partial" : "Pending";
 
   async function savePayment() {
@@ -33,7 +40,7 @@ export function InvoicePaymentForm({ invoice, onClose, onDone }) {
       cash_amount: cash,
       upi_amount: upi,
       payment_date: form.payment_date || todayISO(),
-      note: form.note.trim(),
+      note: [form.note.trim(), emiPenalty > 0 ? `EMI late penalty ${formatINR(emiPenalty)}` : ""].filter(Boolean).join(" | "),
     }]);
 
     if (paymentError) {
@@ -43,8 +50,8 @@ export function InvoicePaymentForm({ invoice, onClose, onDone }) {
     }
 
     const nextEmiDue =
-      invoice.payment_method === "emi" && updatedDue > 0 && form.mark_next_emi
-        ? nextMonthlyDate(invoice.emi_next_due_date || form.payment_date || todayISO())
+      invoice.payment_method === "emi" && updatedDue > 0 && form.mark_next_emi && principalPayment >= currentBaseEmiDue
+        ? nextEmiDueDate(invoice.emi_next_due_date || form.payment_date || todayISO())
         : updatedDue <= 0
           ? null
           : invoice.emi_next_due_date || null;
@@ -92,6 +99,7 @@ export function InvoicePaymentForm({ invoice, onClose, onDone }) {
       </div>
       <div className="payment-summary">
         <div><span>Pending</span><strong>{formatINR(oldDue)}</strong></div>
+        {emiPenalty > 0 && <div><span>Late Penalty</span><strong className="danger-line">{formatINR(emiPenalty)}</strong></div>}
         <div><span>New Payment</span><strong>{formatINR(newPayment)}</strong></div>
         <div><span>Balance After</span><strong>{formatINR(updatedDue)}</strong></div>
       </div>
@@ -118,8 +126,11 @@ export function InvoicePaymentForm({ invoice, onClose, onDone }) {
       {invoice.payment_method === "emi" && updatedDue > 0 && (
         <label className="check-row">
           <input type="checkbox" checked={form.mark_next_emi} onChange={(e) => setForm({ ...form, mark_next_emi: e.target.checked })} />
-          Move next EMI reminder to next month
+          Move next EMI reminder to next month 10th
         </label>
+      )}
+      {invoice.payment_method === "emi" && emiPenalty > 0 && (
+        <p className="helper">Next EMI date moves only after the current EMI principal is paid. Late penalty is added separately at Rs 50/day.</p>
       )}
       {message && <div className={message.includes("added") ? "success-box" : "error-box"}>{message}</div>}
       <button className="primary-btn big" onClick={savePayment} disabled={saving}>{saving ? "Saving..." : "Save Payment"}</button>
@@ -150,7 +161,7 @@ export function CollectionsPage({ invoices, invoicePayments = [], businessSettin
     const dueDate = invoice.emi_next_due_date || invoice.collection_follow_up_date;
     return dueDate && String(dueDate) < todayISO();
   });
-  const totalPending = pendingInvoices.reduce((sum, invoice) => sum + getDueAmount(invoice), 0);
+  const totalPending = pendingInvoices.reduce((sum, invoice) => sum + (invoice.payment_method === "emi" ? getEmiPayableDue(invoice) : getDueAmount(invoice)), 0);
 
   async function saveFollowUp(invoice) {
     setMessage("");
@@ -208,6 +219,8 @@ export function CollectionsPage({ invoices, invoicePayments = [], businessSettin
             invoice.collection_follow_up_date &&
             String(invoice.collection_follow_up_date) <= todayISO()
           );
+          const emiPenalty = invoice.payment_method === "emi" ? getEmiPenaltyAmount(invoice) : 0;
+          const payableDue = invoice.payment_method === "emi" ? getEmiPayableDue(invoice) : getDueAmount(invoice);
 
           return (
             <div
@@ -231,12 +244,13 @@ export function CollectionsPage({ invoices, invoicePayments = [], businessSettin
               <div className="payment-summary">
                 <div><span>Total</span><strong>{formatINR(invoice.total_amount)}</strong></div>
                 <div><span>Paid</span><strong>{formatINR(getPaidAmount(invoice))}</strong></div>
-                <div><span>Pending</span><strong className="danger-line">{formatINR(getDueAmount(invoice))}</strong></div>
+                <div><span>Pending</span><strong className="danger-line">{formatINR(payableDue)}</strong></div>
               </div>
 
               {invoice.payment_method === "emi" && (
                 <p className={invoice.emi_next_due_date && String(invoice.emi_next_due_date) <= todayISO() ? "danger-line" : "muted"}>
                   EMI Monthly: {formatINR(invoice.emi_monthly_amount)} | Next EMI: {invoice.emi_next_due_date || "Not set"}
+                  {emiPenalty > 0 ? ` | Penalty: ${formatINR(emiPenalty)}` : ""}
                 </p>
               )}
 
@@ -312,7 +326,8 @@ export function CollectionsPage({ invoices, invoicePayments = [], businessSettin
         fields={detailInvoice ? [
           { label: "Total", value: formatINR(detailInvoice.total_amount) },
           { label: "Paid", value: formatINR(getPaidAmount(detailInvoice)) },
-          { label: "Pending", value: formatINR(getDueAmount(detailInvoice)) },
+          { label: "Pending", value: formatINR(detailInvoice.payment_method === "emi" ? getEmiPayableDue(detailInvoice) : getDueAmount(detailInvoice)) },
+          { label: "EMI Penalty", value: detailInvoice.payment_method === "emi" ? formatINR(getEmiPenaltyAmount(detailInvoice)) : "" },
           { label: "Payment Status", value: detailInvoice.payment_status },
           { label: "Payment Method", value: detailInvoice.payment_method },
           { label: "EMI Due", value: detailInvoice.emi_next_due_date },
