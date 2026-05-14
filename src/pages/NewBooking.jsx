@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { emptyBooking } from "../constants/defaults";
 import { supabase } from "../supabaseClient";
 import { formatINR, generateOtp, uniqueServices } from "../utils/appUtils";
-import { saveJobAssignment } from "../services/jobAssignments";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 
 export function NewBooking({ services, technicians, customers = [], initialLead = null, telecaller = null, onDone }) {
@@ -96,11 +95,6 @@ export function NewBooking({ services, technicians, customers = [], initialLead 
 
     if (bookingError) { setMessage("Booking save error: " + bookingError.message); setSaving(false); return; }
 
-    if (form.technicianId) {
-      const { error: jobError } = await saveJobAssignment(booking.id, form.technicianId);
-      if (jobError) { setMessage("Booking saved, but technician assign error: " + jobError.message); setSaving(false); return; }
-    }
-
     if (initialLead?.id) {
       await supabase.from("leads").update({ status: "Converted" }).eq("id", initialLead.id);
     }
@@ -158,22 +152,12 @@ export function NewBooking({ services, technicians, customers = [], initialLead 
           <button className="location-link" type="button">Use Current Location</button>
         </div>
 
-        <div className="booking-form-grid">
-          <div className="booking-field-card">
-            <label>Priority</label>
-            <div className="booking-chip-row compact">
-              {["Normal", "Medium", "High", "Critical"].map((priority) => (
-                <button key={priority} className={form.priority === priority ? "booking-chip active" : "booking-chip"} type="button" onClick={() => setForm({ ...form, priority })}>{priority}</button>
-              ))}
-            </div>
-          </div>
-
-          <div className="booking-field-card">
-            <label>Technician Assignment</label>
-            <select value={form.technicianId} onChange={(e) => setForm({ ...form, technicianId: e.target.value })}>
-              <option value="">Skip now - assign later from Jobs page</option>
-              {technicians.filter((t) => t.is_active !== false).map((t) => <option value={t.id} key={t.id}>{t.name} ({t.mobile})</option>)}
-            </select>
+        <div className="booking-field-card">
+          <label>Priority</label>
+          <div className="booking-chip-row compact">
+            {["Normal", "Medium", "High", "Critical"].map((priority) => (
+              <button key={priority} className={form.priority === priority ? "booking-chip active" : "booking-chip"} type="button" onClick={() => setForm({ ...form, priority })}>{priority}</button>
+            ))}
           </div>
         </div>
 

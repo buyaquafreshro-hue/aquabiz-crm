@@ -1,13 +1,14 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { InvoiceBuilder } from "../components/InvoiceBuilder";
 import { StatCard } from "../components/shared";
 import { getText } from "../constants/text";
 import { formatINR, isActive, todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl, reminderMessage } from "../utils/whatsappUtils";
-export function Dashboard({ stats, services = [], bookings, jobs, technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, leads = [], dataErrors = [], onUpdated, setPage, setReportFilter, language }) {
+export function Dashboard({ stats, services = [], bookings, jobs, technicians, telecallers = [], technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, leads = [], dataErrors = [], onUpdated, setPage, setReportFilter, language }) {
   const [invoiceJobId, setInvoiceJobId] = useState(null);
-  const [openBookingId, setOpenBookingId] = useState(null);
-  const recent = bookings.slice(0, 5);
+  const [invoiceBookingId, setInvoiceBookingId] = useState(null);
+  const [jobFilter, setJobFilter] = useState("all");
+
   const coverageReminders = coverages
     .filter((c) => c.next_service_due_date && String(c.next_service_due_date) <= todayISO() && isActive(c))
     .map((c) => ({ ...c, reminder_type: "Service", due_date: c.next_service_due_date }));
@@ -22,9 +23,14 @@ export function Dashboard({ stats, services = [], bookings, jobs, technicians, t
     setPage("reports");
   }
 
+  const isCompletedStatus = (s) => ["completed", "complete", "closed", "done"].includes(String(s || "").toLowerCase());
+  const isClosedJobStatus = (s) => isCompletedStatus(s) || ["cancelled", "canceled"].includes(String(s || "").toLowerCase());
+
+
+
   return (
     <>
-      <section className="premium-hero dashboard-overview-head">
+      <section className="premium-hero">
         <div>
           <h2>Service Overview</h2>
           <p>Manage your daily service pipeline and financials.</p>
@@ -68,14 +74,11 @@ export function Dashboard({ stats, services = [], bookings, jobs, technicians, t
       <section className="premium-grid">
         <StatCard icon="🛒" label={t.newSales} value={formatINR(stats.currentMonthSales)} onClick={() => openReport("new_sale")} />
         <StatCard icon="🛡️" label={t.amcSales} value={formatINR(stats.currentMonthAmc)} onClick={() => openReport("amc")} />
-        <StatCard icon="I" label="Invoices" value={invoices.length} onClick={() => setPage("invoices")} />
-        <StatCard icon="L" label="Leads" value={leads.length} onClick={() => setPage("leads")} />
-        <StatCard icon="📋" label={t.bookings} value={stats.totalBookings} onClick={() => openReport("bookings")} />
-        <StatCard icon="J" label="Total Jobs" value={stats.totalJobs} onClick={() => setPage("jobs")} />
-        <StatCard icon="O" label="Open Jobs" value={stats.openJobs} onClick={() => setPage("openJobs")} />
+        <StatCard icon="🧾" label="Invoices" value={invoices.length} onClick={() => setPage("invoices")} />
+        <StatCard icon="🎯" label="Leads" value={leads.length} onClick={() => setPage("leads")} />
+        <StatCard icon="🔧" label="Jobs Pipeline" value={stats.totalJobs} onClick={() => setPage("jobsPipeline")} />
         <StatCard icon="🔔" label={t.reminders} value={stats.remindersDue} onClick={() => setPage("reminders")} />
         <StatCard icon="⚠️" label={t.lowStock} value={stats.lowStock} onClick={() => openReport("low_stock")} />
-        <StatCard icon="👨‍🔧" label={t.completedJobs} value={stats.completedJobs} onClick={() => setPage("completedJobs")} />
       </section>
 
       <section className="action-panel">
@@ -86,13 +89,11 @@ export function Dashboard({ stats, services = [], bookings, jobs, technicians, t
           </div>
         </div>
         <div className="action-grid">
-          <button onClick={() => setPage("booking")}>{t.newBooking}</button>
           <button onClick={() => setPage("leads")}>Leads</button>
           <button onClick={() => setPage("sale")}>{t.amcNewSale}</button>
           <button onClick={() => setPage("collections")}>Collections</button>
           <button onClick={() => setPage("reminders")}>Reminders</button>
-          <button onClick={() => setPage("openJobs")}>Open Jobs</button>
-          <button onClick={() => setPage("completedJobs")}>Completed Jobs</button>
+          <button onClick={() => setPage("jobsPipeline")}>Jobs Pipeline</button>
           <button onClick={() => setPage("plans")}>{t.plansProducts}</button>
           <button onClick={() => setPage("inventory")}>{t.inventory}</button>
           <button onClick={() => setPage("technicianParts")}>Technician Parts</button>
@@ -133,85 +134,33 @@ export function Dashboard({ stats, services = [], bookings, jobs, technicians, t
             ))
           )}
         </section>
-
-        <section className="panel premium-panel">
-          <div className="section-head">
-            <div>
-              <h3>{t.recentBookings}</h3>
-              <p>{t.latestRequests}</p>
-            </div>
-            <button className="link-btn" onClick={() => setPage("jobs")}>{t.allJobs}</button>
-          </div>
-
-          {recent.length === 0 ? (
-            <div className="empty-state">
-              <strong>{t.noBookings}</strong>
-              <p>New bookings will appear here.</p>
-            </div>
-          ) : (
-            recent.map((b) => {
-              const job = jobs.find((j) => String(j.booking_id) === String(b.id));
-              const hasInvoice = invoices.some((i) => String(i.booking_id) === String(b.id));
-              const isOpen = String(openBookingId) === String(b.id);
-              return (
-                <div className="premium-booking-card" key={b.id}>
-                  <button
-                    className="booking-card-head compact-click"
-                    type="button"
-                    onClick={() => setOpenBookingId(isOpen ? null : b.id)}
-                  >
-                    <div>
-                      <strong>{b.customer_name}</strong>
-                      <p>{isOpen ? "Hide details" : "Click to view details"}</p>
-                    </div>
-                    <span className={job ? "status assigned" : "status unassigned"}>
-                      {job ? job.status : "Unassigned"}
-                    </span>
-                  </button>
-                  {isOpen && (
-                    <>
-                      <p>{b.mobile}</p>
-                      {b.address && <p className="muted">Address: {b.address}</p>}
-                  <p>{b.service_type} • {formatINR(b.booking_amount)}</p>
-                  {b.complaint_notes && <p className="muted">Notes: {b.complaint_notes}</p>}
-                  <div className="row-actions">
-                    {!job && <button className="ghost-btn small" onClick={() => setPage("jobs")}>Assign</button>}
-                    {job && !hasInvoice && (
-                      <button className="primary-btn small" onClick={() => setInvoiceJobId(invoiceJobId === job.id ? null : job.id)}>
-                        Invoice
-                      </button>
-                    )}
-                    {hasInvoice && <span className="status assigned">Invoice Generated</span>}
-                  </div>
-
-                  {invoiceJobId === job?.id && (
-                    <InvoiceBuilder
-                      job={job}
-                      booking={b}
-                      services={services}
-                      inventory={inventory}
-                      technicianParts={technicianParts}
-                      coverages={coverages}
-                      invoices={invoices}
-                      amcPlans={amcPlans}
-                      products={products}
-                      salesPersons={salesPersons}
-                      businessSettings={businessSettings}
-                      onClose={() => setInvoiceJobId(null)}
-                      onDone={async () => {
-                        setInvoiceJobId(null);
-                        await onUpdated();
-                      }}
-                    />
-                  )}
-                    </>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </section>
       </section>
+
+      {invoiceJobId && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", justifyContent: "center", alignItems: "center", padding: "20px" }}>
+          <div style={{ background: "transparent", maxHeight: "100%", overflowY: "auto", width: "100%", maxWidth: "800px" }}>
+            <InvoiceBuilder
+              job={jobs.find(j => j.id === invoiceJobId)}
+              booking={bookings.find(b => b.id === invoiceBookingId)}
+              services={services}
+              inventory={inventory}
+              technicianParts={technicianParts}
+              coverages={coverages}
+              invoices={invoices}
+              amcPlans={amcPlans}
+              products={products}
+              salesPersons={salesPersons}
+              businessSettings={businessSettings}
+              onClose={() => { setInvoiceJobId(null); setInvoiceBookingId(null); }}
+              onDone={async () => {
+                setInvoiceJobId(null);
+                setInvoiceBookingId(null);
+                await onUpdated();
+              }}
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }

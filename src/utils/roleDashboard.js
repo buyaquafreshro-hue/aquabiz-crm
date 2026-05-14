@@ -18,12 +18,7 @@ export function getCompletionTime(job, booking) {
 }
 
 export function isRecentCompletedJob(job, booking, now = new Date()) {
-  if (!isCompletedStatus(job?.status)) return false;
-  const raw = getCompletionTime(job, booking);
-  if (!raw) return false;
-  const time = new Date(raw).getTime();
-  if (Number.isNaN(time)) return false;
-  return now.getTime() - time <= 48 * 60 * 60 * 1000;
+  return isCompletedStatus(job?.status);
 }
 
 export function getLocalDateKey(value = new Date()) {
@@ -70,7 +65,7 @@ export function calculateTelecallerStats({ telecaller, leads = [], bookings = []
     currentMonthRevenue: ownInvoices.filter((invoice) => getRecordMonthKey(invoice) === currentMonth).reduce((sum, invoice) => sum + getPaidAmount(invoice), 0),
     lastMonthRevenue: ownInvoices.filter((invoice) => getRecordMonthKey(invoice) === lastMonth).reduce((sum, invoice) => sum + getPaidAmount(invoice), 0),
     totalBookingsCreated: ownBookings.length,
-    openJobsCreated: jobs.filter((job) => ownBookingIds.has(String(job.booking_id)) && isOpenJobStatus(job.status)).length,
+    openJobsCreated: jobs.filter((job) => ownBookingIds.has(String(job.booking_id)) && isOpenJobStatus(job.status) && job.is_active !== false && job.assignment_status !== "reassigned").length,
   };
 }
 
@@ -78,7 +73,7 @@ export function calculateTechnicianStats({ technician, jobs = [], bookings = [],
   const technicianId = technician?.id;
   const currentMonth = getCurrentMonthKey();
   const lastMonth = getPreviousMonthKey(currentMonth);
-  const myJobs = jobs.filter((job) => String(job.technician_id || "") === String(technicianId));
+  const myJobs = jobs.filter((job) => String(job.technician_id || "") === String(technicianId) && job.is_active !== false && job.assignment_status !== "reassigned");
   const myInvoices = invoices.filter((invoice) => linkedToTechnician(invoice, jobs, bookings, technicianId));
   const completedJobs = myJobs.filter((job) => isCompletedStatus(job.status));
 

@@ -13,8 +13,7 @@ import { clearRoleSession, getRoleSession, roleToAuthUser } from "./utils/roleSe
 import { isSuccessToast, useAutoHideMessage } from "./utils/toastUtils";
 
 const Dashboard = lazy(() => import("./pages/Dashboard").then((module) => ({ default: module.Dashboard })));
-const JobsPage = lazy(() => import("./pages/JobsPage").then((module) => ({ default: module.JobsPage })));
-const JobListPage = lazy(() => import("./pages/JobsPage").then((module) => ({ default: module.JobListPage })));
+const JobsPipelinePage = lazy(() => import("./pages/JobsPipelinePage").then((module) => ({ default: module.JobsPipelinePage })));
 const TechnicianPanel = lazy(() => import("./components/TechnicianPanel").then((module) => ({ default: module.TechnicianPanel })));
 const TelecallerPanel = lazy(() => import("./components/TelecallerPanel").then((module) => ({ default: module.TelecallerPanel })));
 const TechnicianPartsPage = lazy(() => import("./pages/TechnicianPartsPage").then((module) => ({ default: module.TechnicianPartsPage })));
@@ -50,9 +49,7 @@ const ADMIN_PAGE_KEY = "aquabiz_admin_last_page";
 const ADMIN_RESTORABLE_PAGES = new Set([
   "dashboard",
   "booking",
-  "jobs",
-  "openJobs",
-  "completedJobs",
+  "jobsPipeline",
   "technicianParts",
   "inventory",
   "plans",
@@ -392,6 +389,7 @@ export default function App() {
             bookings={bookings}
             jobs={jobs}
             technicians={technicians}
+            telecallers={telecallers}
             inventory={inventory}
             coverages={coverages}
             invoices={invoices}
@@ -408,12 +406,8 @@ export default function App() {
           />
         )}
 
-        {page === "booking" && <NewBooking services={services} technicians={technicians} customers={customers} initialLead={bookingDraft} onDone={async () => { setBookingDraft(null); await loadAll(); setPage("jobs"); }} />}
-        {page === "jobs" && <JobsPage bookings={bookings} jobs={jobs} technicians={technicians} technicianParts={technicianParts} inventory={inventory} coverages={coverages} invoices={invoices}
-            amcPlans={amcPlans}
-            products={products} services={services} salesPersons={salesPersons} businessSettings={businessSettings} onUpdated={loadAll} setPage={setPage} />}
-        {page === "openJobs" && <JobListPage title="Open Jobs" type="open" bookings={bookings} jobs={jobs} technicians={technicians} coverages={coverages} setPage={setPage} />}
-        {page === "completedJobs" && <JobListPage title="Completed Jobs" type="completed" bookings={bookings} jobs={jobs} technicians={technicians} coverages={coverages} setPage={setPage} />}
+        {page === "booking" && <NewBooking services={services} technicians={technicians} customers={customers} initialLead={bookingDraft} onDone={async () => { setBookingDraft(null); await loadAll(); setPage("jobsPipeline"); }} />}
+        {page === "jobsPipeline" && <JobsPipelinePage bookings={bookings} jobs={jobs} technicians={technicians} telecallers={telecallers} invoices={invoices} services={services} inventory={inventory} technicianParts={technicianParts} coverages={coverages} amcPlans={amcPlans} products={products} salesPersons={salesPersons} businessSettings={businessSettings} onUpdated={loadAll} setPage={setPage} />}
         {page === "technicianParts" && <TechnicianPartsPage technicians={technicians} technicianParts={technicianParts} inventory={inventory} onUpdated={loadAll} />}
         {page === "technician" && <TechnicianPanel jobs={jobs} bookings={bookings} technicians={technicians} technicianParts={technicianParts} inventory={inventory} coverages={coverages} invoices={invoices}
             amcPlans={amcPlans}

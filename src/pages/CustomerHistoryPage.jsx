@@ -12,6 +12,13 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
   const [filter, setFilter] = useState("all");
   const [message, setMessage] = useState("");
   const [importing, setImporting] = useState(false);
+  const [showManualAdd, setShowManualAdd] = useState(false);
+  const [manualForm, setManualForm] = useState({
+    name: "", mobile: "", address: "", area: "",
+    invoiceDate: todayISO(), invoiceAmount: "",
+    sourceType: "general_service", sourceName: "Past Service", validityDays: "365", freeVisits: "3"
+  });
+  const [savingManual, setSavingManual] = useState(false);
   useAutoHideMessage(message, setMessage);
   const isListMode = mode === "list";
   const isDetailMode = mode === "detail";
@@ -62,10 +69,11 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
   const customerPayments = selectedMobileKey ? invoicePayments.filter((p) => normalizeMobile(p.mobile) === selectedMobileKey) : [];
   const customerInvoiceIds = new Set(customerInvoices.map((invoice) => String(invoice.id)));
   const customerUsage = selectedMobile ? usage.filter((row) => customerInvoiceIds.has(String(row.invoice_id))) : [];
+  const activeJobs = jobs.filter((j) => j.is_active !== false && j.assignment_status !== "reassigned");
   const customerUsageRows = customerUsage.map((row) => {
     const invoice = customerInvoices.find((inv) => String(inv.id) === String(row.invoice_id));
     const booking = customerBookings.find((b) => String(b.id) === String(row.booking_id || invoice?.booking_id));
-    const job = jobs.find((j) => String(j.booking_id) === String(booking?.id));
+    const job = activeJobs.find((j) => String(j.booking_id) === String(booking?.id));
     const technician = technicians.find((t) => String(t.id) === String(row.technician_id || job?.technician_id));
     return {
       ...row,
@@ -78,7 +86,7 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
   });
   const customerJobs = customerBookings
     .map((booking) => {
-      const job = jobs.find((j) => String(j.booking_id) === String(booking.id));
+      const job = activeJobs.find((j) => String(j.booking_id) === String(booking.id));
       const technician = technicians.find((t) => String(t.id) === String(job?.technician_id));
       return { booking, job, technician };
     })
@@ -124,7 +132,7 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
     ...customerCoverages.map((coverage) => ({
       id: `coverage-${coverage.id}`,
       date: coverage.activation_date || coverage.created_at,
-      type: coverage.source_type === "new_sale" ? "Warranty" : "AMC",
+      type: coverage.source_type === "new_sale" ? "Warranty" : coverage.source_type === "general_service" ? "Service History" : "AMC",
       title: coverage.source_name || "Coverage activated",
       detail: `Expiry ${coverage.expiry_date || "Not set"} | Next service ${coverage.next_service_due_date || "Not set"}`,
     })),
@@ -271,6 +279,119 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
     }
   }
 
+  async function handleManualSubmit(e) {
+    e.preventDefault();
+    const mMobile = normalizeMobile(manualForm.mobile);
+    if (!mMobile || !manualForm.name) {
+      setMessage("Name and valid 10-digit mobile are required.");
+      return;
+    }
+    setSavingManual(true);
+    setMessage("");
+    try {
+      // 1. Upsert Customer
+      const { data: custRows } = await supabase.from("customers").select("id").eq("mobile", mMobile);
+      if (!custRows || custRows.length === 0) {
+        await supabase.from("customers").insert([{
+          name: manualForm.name,
+          mobile: mMobile,
+          address: manualForm.address,
+          area: manualForm.area
+        }]);
+      } else {
+        await supabase.from("customers").update({
+          name: manualForm.name,
+          address: manualForm.address,
+          area: manualForm.area
+        }).eq("id", custRows[0].id);
+      }
+
+      // 2. Initial Invoice for the past date
+      const { data: invData } = await supabase.from("invoices").insert([{
+        invoice_type: manualForm.sourceType === "new_sale" ? "new_sale" : manualForm.sourceType === "amc" ? "amc" : "service",
+        customer_name: manualForm.name,
+        mobile: mMobile,
+        total_amount: Number(manualForm.invoiceAmount || 0),
+        paid_amount: Number(manualForm.invoiceAmount || 0),
+        due_amount: 0,
+        payment_status: "Paid",
+        payment_method: "cash",
+        invoice_date: manualForm.invoiceDate,
+      }]).select().single();
+
+      // 3. Calculate Past Reminders & Next Due
+      let currentDate = new Date(manualForm.invoiceDate + "T00:00:00");
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      let pastServicesCount = 0;
+      const pastHistories = [];
+
+      while (true) {
+        currentDate.setDate(currentDate.getDate() + 90);
+        if (currentDate <= today) {
+          pastServicesCount++;
+          pastHistories.push(new Date(currentDate).toISOString().split('T')[0]);
+        } else {
+          break;
+        }
+      }
+
+      const nextServiceDueDate = currentDate.toISOString().split('T')[0];
+
+      // 4. Create dummy 0 Rs invoices for past assumed services
+      if (pastHistories.length > 0) {
+        const dummyInvoices = pastHistories.map(pastDate => ({
+          invoice_type: "zero",
+          customer_name: manualForm.name,
+          mobile: mMobile,
+          total_amount: 0,
+          paid_amount: 0,
+          due_amount: 0,
+          invoice_date: pastDate,
+          payment_status: "Covered",
+          invoice_reason: "Assumed Past Service (Manual Entry)",
+          is_zero_invoice: true,
+        }));
+        await supabase.from("invoices").insert(dummyInvoices);
+      }
+
+      // 5. Create Coverage
+      const valDays = manualForm.sourceType === "general_service" ? 365 : Number(manualForm.validityDays || 365);
+      const expDate = new Date(manualForm.invoiceDate + "T00:00:00");
+      expDate.setDate(expDate.getDate() + valDays - 1);
+
+      await supabase.from("customer_coverages").insert([{
+        customer_name: manualForm.name,
+        mobile: mMobile,
+        source_type: manualForm.sourceType,
+        source_id: invData?.id,
+        source_name: manualForm.sourceName,
+        coverage_type: manualForm.sourceType === "new_sale" ? "product_warranty" : manualForm.sourceType === "amc" ? "all" : "none",
+        activation_date: manualForm.invoiceDate,
+        validity_days: valDays,
+        expiry_date: expDate.toISOString().split('T')[0],
+        service_reminder_days: 90,
+        next_service_due_date: nextServiceDueDate,
+        free_visits: manualForm.sourceType === "general_service" ? 0 : Number(manualForm.freeVisits || 0),
+        used_visits: pastServicesCount,
+      }]);
+
+      setMessage("Customer and history added successfully.");
+      setShowManualAdd(false);
+      setManualForm({
+        name: "", mobile: "", address: "", area: "",
+        invoiceDate: todayISO(), invoiceAmount: "",
+        sourceType: "general_service", sourceName: "Past Service", validityDays: "365", freeVisits: "3"
+      });
+      await onUpdated?.();
+    } catch (err) {
+      setMessage("Error adding manual customer: " + err.message);
+    } finally {
+      setSavingManual(false);
+    }
+  }
+
   function shareInvoiceWhatsApp(invoice, items, index) {
     window.open(buildWhatsAppUrl(invoice.mobile || selectedCustomer?.mobile, invoiceShareText(invoice, items, index)), "_blank");
   }
@@ -321,8 +442,9 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
               <p className="muted">Old customer CSV upload aur complete customer download.</p>
             </div>
             <div className="row-actions">
+              <button className="primary-btn small" type="button" onClick={() => setShowManualAdd(true)}>+ Add Manual Customer</button>
               <button className="ghost-btn small" type="button" onClick={downloadCustomerTemplate}>Template CSV</button>
-              <button className="primary-btn small" type="button" onClick={downloadCustomers}>Download Customers</button>
+              <button className="ghost-btn small" type="button" onClick={downloadCustomers}>Download Customers</button>
               <label className="ghost-btn small file-action">
                 {importing ? "Uploading..." : "Upload CSV"}
                 <input type="file" accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={importCustomers} disabled={importing} />
@@ -330,6 +452,74 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
             </div>
           </div>
           {message && <div className={isSuccessToast(message) ? "success-box" : "error-box"}>{message}</div>}
+        </section>
+      )}
+
+      {showManualAdd && (
+        <section className="modal-card">
+          <div className="panel-head">
+            <h3>Add Manual Customer & History</h3>
+            <button className="ghost-btn small" onClick={() => setShowManualAdd(false)}>Close</button>
+          </div>
+          <form onSubmit={handleManualSubmit} className="form-stack">
+            <div className="two-col">
+              <input placeholder="Customer Name *" required value={manualForm.name} onChange={e => setManualForm({...manualForm, name: e.target.value})} />
+              <input placeholder="Mobile Number *" type="number" required value={manualForm.mobile} onChange={e => setManualForm({...manualForm, mobile: e.target.value})} />
+            </div>
+            <div className="two-col">
+              <input placeholder="Address" value={manualForm.address} onChange={e => setManualForm({...manualForm, address: e.target.value})} />
+              <input placeholder="Area / City" value={manualForm.area} onChange={e => setManualForm({...manualForm, area: e.target.value})} />
+            </div>
+            
+            <h4 className="mt-sm">Original Service / Product Details</h4>
+            <div className="two-col">
+              <div>
+                <label className="field-label">Original Invoice Date</label>
+                <input type="date" required value={manualForm.invoiceDate} onChange={e => setManualForm({...manualForm, invoiceDate: e.target.value})} />
+              </div>
+              <div>
+                <label className="field-label">Invoice Amount (₹)</label>
+                <input type="number" required placeholder="Amount" value={manualForm.invoiceAmount} onChange={e => setManualForm({...manualForm, invoiceAmount: e.target.value})} />
+              </div>
+            </div>
+            
+            <div className="two-col">
+              <div>
+                <label className="field-label">Service / Product Type</label>
+                <select value={manualForm.sourceType} onChange={e => setManualForm({...manualForm, sourceType: e.target.value})}>
+                  <option value="general_service">General Service (No Warranty)</option>
+                  <option value="new_sale">New RO / Product Sale (Warranty)</option>
+                  <option value="amc">AMC Plan</option>
+                </select>
+              </div>
+              <div>
+                <label className="field-label">Product/Service Name</label>
+                <input placeholder="e.g. RO Service, Aqua Grand..." required value={manualForm.sourceName} onChange={e => setManualForm({...manualForm, sourceName: e.target.value})} />
+              </div>
+            </div>
+
+            {manualForm.sourceType !== "general_service" && (
+              <div className="two-col">
+                <div>
+                  <label className="field-label">Validity (Days)</label>
+                  <input type="number" required value={manualForm.validityDays} onChange={e => setManualForm({...manualForm, validityDays: e.target.value})} />
+                </div>
+                <div>
+                  <label className="field-label">Free Visits included</label>
+                  <input type="number" required value={manualForm.freeVisits} onChange={e => setManualForm({...manualForm, freeVisits: e.target.value})} />
+                </div>
+              </div>
+            )}
+
+            <div className="muted-box mt-sm">
+              <p>System will calculate 90-day intervals from the Original Invoice Date.</p>
+              <p>Any service dates that fall in the past will be assumed as "Service Done" automatically and added to the timeline. The next upcoming 90-day mark will be set as the Reminder.</p>
+            </div>
+
+            <button type="submit" className="primary-btn big mt-sm" disabled={savingManual}>
+              {savingManual ? "Saving..." : "Save Customer & Calculate History"}
+            </button>
+          </form>
         </section>
       )}
 
@@ -392,14 +582,14 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
       ) : (
         <>
           <section className="cards-grid">
-            <StatCard icon="📋" label="Bookings" value={customerBookings.length} />
-            <StatCard icon="🧾" label="Invoices" value={customerInvoices.length} />
-            <StatCard icon="💰" label="Total Spend" value={formatINR(totalSpend)} />
-            <StatCard icon="⏳" label="Pending" value={formatINR(pending)} />
-            <StatCard icon="P" label="Paid" value={formatINR(paid)} />
-            <StatCard icon="A" label="Active AMC/Warranty" value={activeCoverageCount} />
-            <StatCard icon="R" label="Due Reminders" value={dueReminderCount} />
-            <StatCard icon="L" label="Leads" value={customerLeads.length} />
+            <StatCard icon="📋" label="Bookings" value={customerBookings.length} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+            <StatCard icon="🧾" label="Invoices" value={customerInvoices.length} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+            <StatCard icon="💰" label="Total Spend" value={formatINR(totalSpend)} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+            <StatCard icon="⏳" label="Pending" value={formatINR(pending)} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+            <StatCard icon="💵" label="Paid" value={formatINR(paid)} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+            <StatCard icon="🛡️" label="Active AMC/Warranty" value={activeCoverageCount} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+            <StatCard icon="🔔" label="Due Reminders" value={dueReminderCount} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+            <StatCard icon="🎯" label="Leads" value={customerLeads.length} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
           </section>
 
           <section className="panel customer-profile-panel">
@@ -454,7 +644,7 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
             {customerCoverages.length === 0 ? <p className="muted">No AMC/Warranty records.</p> : customerCoverages.map((c) => (
               <div className="job-card" key={c.id}>
                 <strong>{c.source_name}</strong>
-                <p>{c.source_type} • {coverageLabel(c.coverage_type)}</p>
+                <p>{c.source_type === "general_service" ? "Regular Service" : c.source_type} • {coverageLabel(c.coverage_type)}</p>
                 <p>Activation: {c.activation_date} | Expiry: {c.expiry_date}</p>
                 <p>Visits: {c.used_visits}/{c.free_visits}</p>
                 <p>Next Service: {c.next_service_due_date}</p>

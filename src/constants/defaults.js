@@ -1,6 +1,6 @@
 import { todayISO } from "../utils/appUtils";
 
-export const BRAND = "AquaBiz";
+export const BRAND = "Aquafresh RO Service";
 
 export const emptyBooking = {
   name: "",

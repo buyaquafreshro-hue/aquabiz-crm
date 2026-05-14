@@ -31,6 +31,7 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
   const [showPaymentConfirm, setShowPaymentConfirm] = useState(false);
   const [salesPersonId, setSalesPersonId] = useState("");
   const [zeroInvoiceReason, setZeroInvoiceReason] = useState("");
+  const [otpVerified, setOtpVerified] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   useAutoHideMessage(message, setMessage);
@@ -210,6 +211,15 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
     if (upfrontUpiQrAmount > 0 && !paymentConfirmed && !forceConfirmed) {
       setShowPaymentConfirm(true);
       return;
+    }
+
+    if (total === 0 && booking?.close_otp && !otpVerified) {
+      const entered = window.prompt("Free service / ₹0 Invoice requires Customer OTP to close this job:");
+      if (String(entered || "").trim() !== String(booking.close_otp)) {
+        return setMessage("Wrong OTP. Job cannot be closed without correct OTP.");
+      }
+      setOtpVerified(true);
+      await supabase.from("bookings").update({ close_otp_verified: true }).eq("id", booking.id);
     }
 
     setSaving(true);
@@ -422,16 +432,35 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
       }
     }
 
-    if (serviceCovered && activeCoverage) {
-      const nextServiceDate = addDays(todayISO(), Number(activeCoverage.service_reminder_days || 90));
-      await supabase
-        .from("customer_coverages")
-        .update({
-          used_visits: Number(activeCoverage.used_visits || 0) + 1,
-          last_service_date: todayISO(),
+    if (invoiceType === "service" || invoiceType === "zero") {
+      if (activeCoverage) {
+        const nextServiceDate = addDays(todayISO(), Number(activeCoverage.service_reminder_days || 90));
+        await supabase
+          .from("customer_coverages")
+          .update({
+            used_visits: serviceCovered ? Number(activeCoverage.used_visits || 0) + 1 : activeCoverage.used_visits,
+            last_service_date: todayISO(),
+            next_service_due_date: nextServiceDate,
+          })
+          .eq("id", activeCoverage.id);
+      } else {
+        const nextServiceDate = addDays(todayISO(), 90);
+        await supabase.from("customer_coverages").insert([{
+          customer_name: booking.customer_name,
+          mobile: booking.mobile,
+          source_type: "general_service",
+          source_id: invoice.id,
+          source_name: "Service Reminder",
+          coverage_type: "none",
+          free_visits: 0,
+          used_visits: 0,
+          activation_date: todayISO(),
+          validity_days: 365,
+          expiry_date: addDays(todayISO(), 365),
+          service_reminder_days: 90,
           next_service_due_date: nextServiceDate,
-        })
-        .eq("id", activeCoverage.id);
+        }]);
+      }
     }
 
     if (paymentMode === "emi") {
@@ -759,7 +788,7 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
       )}
 
       <button className="primary-btn big" onClick={() => generateInvoice()} disabled={saving}>
-        {saving ? "Saving..." : "Generate Final Invoice"}
+        {saving ? "Saving..." : completionMode ? (total === 0 && booking?.close_otp && !otpVerified ? "Complete Job (Requires OTP)" : "Complete Job") : "Generate Final Invoice"}
       </button>
     </section>
   );

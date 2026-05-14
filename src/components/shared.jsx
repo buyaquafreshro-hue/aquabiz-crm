@@ -87,11 +87,11 @@ export function DetailDrawer({ title, subtitle, fields = [], children, onClose }
 
 export function BottomNav({ page, setPage }) {
   const items = [
-    ["dashboard", "Dashboard", "D"],
-    ["customers", "Customers", "C"],
-    ["jobs", "Jobs", "J"],
-    ["collections", "Payments", "P"],
-    ["settings", "More", "M"],
+    ["dashboard", "Dashboard", "📊"],
+    ["customers", "Customers", "👥"],
+    ["jobsPipeline", "Jobs", "🔧"],
+    ["collections", "Payments", "💰"],
+    ["settings", "More", "⚙️"],
   ];
   return (
     <nav className="bottom-nav">

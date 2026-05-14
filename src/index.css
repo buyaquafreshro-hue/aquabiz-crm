@@ -3831,3 +3831,136 @@ select:focus {
     display: grid;
   }
 }
+
+/* Premium UI Upgrades */
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes overlayFade {
+  from { opacity: 0; backdrop-filter: blur(0px); }
+  to { opacity: 1; backdrop-filter: blur(6px); }
+}
+
+.modal-overlay {
+  animation: overlayFade 0.25s ease forwards;
+  background: rgba(0, 6, 102, 0.4) !important;
+}
+
+.modal-card, .sub-panel, .panel {
+  animation: modalFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.modal-card {
+  box-shadow: 0 24px 64px rgba(0, 6, 102, 0.16);
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.4);
+}
+
+.primary-btn, .ghost-btn, .hero-btn, .dispatch-card, .premium-booking-card, .job-card, .stat-card, .chip {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.primary-btn:hover, .hero-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(0, 138, 115, 0.22);
+}
+
+.ghost-btn:hover, .chip:hover {
+  background: var(--soft);
+  transform: translateY(-1px);
+}
+
+.dispatch-card:hover, .premium-booking-card:hover, .job-card:hover, .stat-card.clickable:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 32px rgba(0, 6, 102, 0.12);
+  border-color: #bdc2ff;
+}
+
+.status {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 11px;
+}
+
+.status.progress {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.status.cancelled {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.topbar {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.premium-hero {
+  background: radial-gradient(circle at top right, rgba(104,250,221,.25), transparent 45%), linear-gradient(135deg, #000666, #091294 55%, #006655);
+}
+
+/* Skeleton Loading Effect */
+@keyframes skeleton-loading {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+.skeleton-box {
+  background: linear-gradient(90deg, #f0eded 25%, #fbf9f8 50%, #f0eded 75%);
+  background-size: 400% 100%;
+  animation: skeleton-loading 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+.excel-table-container {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.excel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--card-bg, #fff);
+}
+
+.excel-table th, .excel-table td {
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.excel-table th {
+  background: var(--soft);
+  font-weight: 600;
+  color: var(--text);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.excel-table tr:nth-child(even) td {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.excel-table tr:hover td {
+  background: rgba(0, 6, 102, 0.03);
+}
+
+.excel-table td strong {
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.repeat-row td {
+  background: rgba(255, 0, 0, 0.04) !important;
+}

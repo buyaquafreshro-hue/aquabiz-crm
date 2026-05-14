@@ -44,8 +44,10 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
     partsMap[key].value += Number(u.billing_price || 0) * Number(u.quantity || 0);
   });
 
+  const activeJobs = jobs.filter((j) => j.is_active !== false && j.assignment_status !== "reassigned");
+
   const techMap = {};
-  jobs.forEach((job) => {
+  activeJobs.forEach((job) => {
     const tech = technicians.find((t) => String(t.id) === String(job.technician_id));
     const key = tech?.name || "Unassigned";
     if (!techMap[key]) techMap[key] = { assigned: 0, completed: 0 };
@@ -80,7 +82,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
       .filter((invoice) => invoice.booking_id && !["amc", "new_sale"].includes(invoice.invoice_type))
       .map((invoice) => String(invoice.booking_id))
   );
-  const completedJobs = jobs.filter((j) => isCompletedStatus(j.status) || completedJobIds.has(String(j.booking_id)));
+  const completedJobs = activeJobs.filter((j) => isCompletedStatus(j.status) || completedJobIds.has(String(j.booking_id)));
 
   const reportTitles = {
     all: "Full Monthly Report",
@@ -266,21 +268,21 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
 
       {(filter === "all" || filter === "collection") && (
         <section className="cards-grid reports-summary-grid">
-          <StatCard icon="🧾" label="Invoices" value={monthInvoices.length} />
-          <StatCard icon="💰" label="Total Billing" value={formatINR(total)} />
-          <StatCard icon="✅" label="Paid" value={formatINR(paid)} />
-          <StatCard icon="⏳" label="Pending" value={formatINR(pending)} />
-          <StatCard icon="C" label="Cash" value={formatINR(cashTotal)} />
-          <StatCard icon="U" label="UPI" value={formatINR(upiTotal)} />
+          <StatCard icon="🧾" label="Invoices" value={monthInvoices.length} onClick={() => setFilter("all")} />
+          <StatCard icon="💰" label="Total Billing" value={formatINR(total)} onClick={() => setFilter("all")} />
+          <StatCard icon="✅" label="Paid" value={formatINR(paid)} onClick={() => setFilter("all")} />
+          <StatCard icon="⏳" label="Pending" value={formatINR(pending)} onClick={() => setFilter("pending")} />
+          <StatCard icon="💵" label="Cash" value={formatINR(cashTotal)} onClick={() => setFilter("collection")} />
+          <StatCard icon="📱" label="UPI" value={formatINR(upiTotal)} onClick={() => setFilter("collection")} />
         </section>
       )}
 
       {(filter === "all" || filter === "new_sale" || filter === "amc") && (
         <section className="cards-grid reports-summary-grid">
-          <StatCard icon="🛒" label="New RO Collection" value={formatINR(saleInvoices.reduce((s,i)=>s+getPaidAmount(i),0))} />
-          <StatCard icon="🛡️" label="AMC Collection" value={formatINR(amcInvoices.reduce((s,i)=>s+getPaidAmount(i),0))} />
-          <StatCard icon="🧰" label="Service Collection" value={formatINR(serviceInvoices.reduce((s,i)=>s+getPaidAmount(i),0))} />
-          <StatCard icon="📦" label="Parts Items Used" value={Object.keys(partsMap).length} />
+          <StatCard icon="🛒" label="New RO Collection" value={formatINR(saleInvoices.reduce((s,i)=>s+getPaidAmount(i),0))} onClick={() => setFilter("new_sale")} />
+          <StatCard icon="🛡️" label="AMC Collection" value={formatINR(amcInvoices.reduce((s,i)=>s+getPaidAmount(i),0))} onClick={() => setFilter("amc")} />
+          <StatCard icon="🧰" label="Service Collection" value={formatINR(serviceInvoices.reduce((s,i)=>s+getPaidAmount(i),0))} onClick={() => setFilter("all")} />
+          <StatCard icon="📦" label="Parts Items Used" value={Object.keys(partsMap).length} onClick={() => setFilter("all")} />
         </section>
       )}
 

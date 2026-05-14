@@ -105,7 +105,7 @@ export function TelecallerPanel({ telecallers, leads, services, technicians, cus
 
       {tab === "leads" ? (
         <LeadsPage
-          leads={leads.filter((lead) => !lead.assigned_telecaller_id || String(lead.assigned_telecaller_id) === String(loggedInTelecaller.id))}
+          leads={leads.filter((lead) => String(lead.assigned_telecaller_id || lead.telecaller_id || "") === String(loggedInTelecaller.id))}
           customers={customers}
           telecallers={telecallers}
           loggedInTelecaller={loggedInTelecaller}

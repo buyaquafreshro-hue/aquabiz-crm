@@ -404,3 +404,7 @@ begin
     with check (bucket_id = 'expense-bills');
   end if;
 end $$;
+
+alter table bookings
+add column if not exists booking_date date,
+add column if not exists booking_time text;

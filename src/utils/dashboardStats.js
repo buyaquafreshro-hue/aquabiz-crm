@@ -29,7 +29,8 @@ export function calculateDashboardStats({
   const currentMonthBookings = bookings.filter((booking) => getRecordMonthKey(booking) === month);
   const totalCollection = currentMonthInvoices.reduce((sum, invoice) => sum + getPaidAmount(invoice), 0);
   const pending = currentMonthInvoices.reduce((sum, invoice) => sum + getDueAmount(invoice), 0);
-  const assignedIds = new Set(jobs.map((job) => String(job.booking_id)));
+  const activeJobs = jobs.filter((job) => job.is_active !== false && job.assignment_status !== "reassigned");
+  const assignedIds = new Set(activeJobs.map((job) => String(job.booking_id)));
   const bookingIds = new Set(bookings.map((booking) => String(booking.id)));
   const lowStock = inventory.filter((part) => Number(part.stock_qty || 0) <= Number(part.low_stock_qty || 0)).length;
   const serviceDue = coverages.filter((coverage) => coverage.next_service_due_date && String(coverage.next_service_due_date) <= todayISO() && isActive(coverage)).length;
@@ -38,7 +39,7 @@ export function calculateDashboardStats({
   const paymentFollowUpsDue = invoices.filter((invoice) => getDueAmount(invoice) > 0 && invoice.collection_follow_up_date && String(invoice.collection_follow_up_date) <= todayISO()).length;
   const leadFollowUpsDue = leads.filter((lead) => lead.follow_up_date && String(lead.follow_up_date) <= todayISO() && !["Converted", "Lost"].includes(lead.status)).length;
   const remindersDue = serviceDue + emiDue + rentDue + paymentFollowUpsDue + leadFollowUpsDue;
-  const completedJobs = getCompletedJobsCount(jobs, invoices);
+  const completedJobs = getCompletedJobsCount(activeJobs, invoices);
 
   return {
     monthInvoices: currentMonthInvoices.length,
@@ -52,8 +53,8 @@ export function calculateDashboardStats({
     totalCollection,
     pending,
     pendingJobs: bookings.filter((booking) => !assignedIds.has(String(booking.id))).length,
-    totalJobs: jobs.length,
-    openJobs: jobs.filter((job) => bookingIds.has(String(job.booking_id)) && isOpenJobStatus(job.status)).length,
+    totalJobs: activeJobs.length,
+    openJobs: activeJobs.filter((job) => bookingIds.has(String(job.booking_id)) && isOpenJobStatus(job.status)).length,
     completedJobs,
     lowStock,
     activeCoverages: coverages.filter(isActive).length,

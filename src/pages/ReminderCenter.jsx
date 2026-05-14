@@ -15,7 +15,7 @@ export function ReminderCenter({ coverages, invoices, leads, businessSettings = 
       id: `service-${item.id}`,
       source_id: item.id,
       type: "service",
-      label: item.source_type === "new_sale" ? "Warranty Service" : "AMC Service",
+      label: item.source_type === "new_sale" ? "Warranty Service" : item.source_type === "general_service" ? "Regular Service Due" : "AMC Service",
       customer_name: item.customer_name,
       mobile: item.mobile,
       due_date: item.next_service_due_date,
@@ -169,11 +169,11 @@ export function ReminderCenter({ coverages, invoices, leads, businessSettings = 
       </section>
 
       <section className="cards-grid reminders-stats-grid">
-        <StatCard icon="S" label="Service Due" value={serviceReminders.length} />
-        <StatCard icon="E" label="EMI Due" value={emiReminders.length} />
-        <StatCard icon="R" label="Rent Due" value={rentReminders.length} />
-        <StatCard icon="P" label="Payment Follow-up" value={paymentFollowUps.length} />
-        <StatCard icon="L" label="Lead Follow-up" value={leadReminders.length} />
+        <StatCard icon="🔧" label="Service Due" value={serviceReminders.length} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+        <StatCard icon="💳" label="EMI Due" value={emiReminders.length} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+        <StatCard icon="🏠" label="Rent Due" value={rentReminders.length} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+        <StatCard icon="💰" label="Payment Follow-up" value={paymentFollowUps.length} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+        <StatCard icon="🎯" label="Lead Follow-up" value={leadReminders.length} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
       </section>
 
       {message && <section className={message.includes("updated") || message.includes("rescheduled") ? "success-box" : "error-box"}>{message}</section>}

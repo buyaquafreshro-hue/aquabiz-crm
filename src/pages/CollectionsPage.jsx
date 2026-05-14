@@ -199,10 +199,10 @@ export function CollectionsPage({ invoices, invoicePayments = [], businessSettin
       </section>
 
       <section className="cards-grid collections-stats-grid">
-        <StatCard icon="₹" label="Total Pending" value={formatINR(totalPending)} />
-        <StatCard icon="E" label="EMI Due" value={emiDue.length} />
-        <StatCard icon="!" label="Overdue" value={overdue.length} />
-        <StatCard icon="F" label="Follow-ups Due" value={followUpsDue.length} />
+        <StatCard icon="💰" label="Total Pending" value={formatINR(totalPending)} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+        <StatCard icon="💳" label="EMI Due" value={emiDue.length} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+        <StatCard icon="⚠️" label="Overdue" value={overdue.length} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
+        <StatCard icon="📞" label="Follow-ups Due" value={followUpsDue.length} onClick={() => window.scrollBy({ top: 400, behavior: 'smooth' })} />
       </section>
 
       {message && <section className={message.includes("saved") ? "success-box" : "error-box"}>{message}</section>}

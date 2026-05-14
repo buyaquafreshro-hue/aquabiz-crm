@@ -57,13 +57,14 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
   const [invoiceJobId, setInvoiceJobId] = useState(null);
   const [completionJobId, setCompletionJobId] = useState(null);
   const [completionInvoiceType, setCompletionInvoiceType] = useState("service");
+  const [openJobId, setOpenJobId] = useState(null);
   const [tracking, setTracking] = useState({ active: false, type: "", jobId: null });
   const [message, setMessage] = useState("");
   const trackingTimerRef = useRef(null);
   useAutoHideMessage(message, setMessage);
 
   const filteredJobs = loggedInTech
-    ? jobs.filter((job) => String(job.technician_id) === String(loggedInTech.id) && isOpenJobStatus(job.status))
+    ? jobs.filter((job) => String(job.technician_id) === String(loggedInTech.id) && isOpenJobStatus(job.status) && job.is_active !== false && job.assignment_status !== "reassigned")
     : [];
   const myParts = loggedInTech
     ? technicianParts.filter((row) => String(row.technician_id) === String(loggedInTech.id))
@@ -227,14 +228,6 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
 
   async function updateStatus(job, status) {
     const booking = bookings.find((b) => String(b.id) === String(job.booking_id));
-    if (status === "Completed" && booking?.close_otp) {
-      const entered = window.prompt("Enter customer OTP to close this job");
-      if (String(entered || "").trim() !== String(booking.close_otp)) {
-        setMessage("Wrong OTP. Job not closed.");
-        return;
-      }
-      await supabase.from("bookings").update({ close_otp_verified: true }).eq("id", booking.id);
-    }
 
     if (status === "Completed") {
       const hasInvoice = invoices.some((i) => String(i.booking_id) === String(job.booking_id));
@@ -361,126 +354,145 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
         {filteredJobs.length === 0 ? (
           <p className="muted">No open jobs assigned to you.</p>
         ) : (
-          filteredJobs.map((job) => {
-            const booking = bookings.find((b) => String(b.id) === String(job.booking_id));
-            const hasInvoice = invoices.some((i) => String(i.booking_id) === String(job.booking_id));
+          <div className="cards-grid">
+            {filteredJobs.map((job) => {
+              const booking = bookings.find((b) => String(b.id) === String(job.booking_id));
+              const hasInvoice = invoices.some((i) => String(i.booking_id) === String(job.booking_id));
+              const isOpen = String(openJobId) === String(job.id);
 
-            return (
-              <div className="job-card technician-job-card" key={job.id}>
-                {booking ? <BookingMini booking={booking} /> : <p className="muted">Booking not found.</p>}
-
-                <p>
-                  <strong>Status:</strong> {job.status}
-                </p>
-
-                <div className="row-actions">
-                  <a className="ghost-btn small" href={`tel:${booking?.mobile || ""}`}>
-                    Call
-                  </a>
-
-                  <a
-                    className="ghost-btn small"
-                    href={buildWhatsAppUrl(booking?.mobile, customerGreetingMessage(booking?.customer_name, businessSettings?.business_name))}
-                    target="_blank"
-                    rel="noreferrer"
+              return (
+                <div className="job-card technician-job-card" key={job.id}>
+                  <div 
+                    className="booking-card-head" 
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setOpenJobId(isOpen ? null : job.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter') setOpenJobId(isOpen ? null : job.id); }}
                   >
-                    WhatsApp
-                  </a>
-
-                  <button
-                    className="primary-btn small"
-                    onClick={() => updateStatus(job, "In Progress")}
-                  >
-                    Start Job
-                  </button>
-
-                  <button
-                    className="ghost-btn small"
-                    onClick={() => startTracking("job", job.id)}
-                  >
-                    Job in progress
-                  </button>
-
-                  {tracking.active && String(tracking.jobId || "") === String(job.id) && (
-                    <button className="ghost-btn small" onClick={stopTracking}>End Duty</button>
-                  )}
-
-                  <button
-                    className="primary-btn small"
-                    onClick={() => updateStatus(job, "Completed")}
-                  >
-                    Complete Job
-                  </button>
-
-                  {!hasInvoice && booking && (
-                    <button
-                      className="primary-btn small"
-                      onClick={() => setInvoiceJobId(invoiceJobId === job.id ? null : job.id)}
-                    >
-                      Generate Invoice
-                    </button>
-                  )}
-
-                  {hasInvoice && <span className="status assigned">Invoice Generated</span>}
-                </div>
-
-                {completionJobId === job.id && booking && (
-                  <div className="sub-panel">
-                    <h3>Generate invoice for this job?</h3>
-                    <BookingMini booking={booking} />
-                    <p className="muted">Job was not closed yet. Generate an invoice first, then the job will be completed.</p>
-                    <div className="row-actions">
-                      <button className="primary-btn small" onClick={() => setCompletionInvoiceType("service")}>Generate Invoice</button>
-                      <button className="ghost-btn small" onClick={() => setCompletionInvoiceType("zero")}>Generate ₹0 Invoice</button>
-                      <button className="ghost-btn small" onClick={() => { setCompletionJobId(null); setMessage("Job was not closed because invoice was not generated."); }}>Cancel</button>
+                    <div>
+                      <strong>{booking?.customer_name || "Customer"}</strong>
+                      <p>{booking?.service_type || "Service"} • {booking?.mobile || ""}</p>
+                      <p className="muted" style={{ fontSize: '12px', marginTop: '4px' }}>{booking?.address || "Address not added"}</p>
                     </div>
-                    <InvoiceBuilder
-                      key={`${job.id}-${completionInvoiceType}`}
-                      job={job}
-                      booking={booking}
-                      services={services}
-                      inventory={inventory}
-                      technicianParts={technicianParts}
-                      coverages={coverages}
-                      invoices={invoices}
-                      amcPlans={amcPlans}
-                      products={products}
-                      salesPersons={salesPersons}
-                      businessSettings={businessSettings}
-                      defaultInvoiceType={completionInvoiceType}
-                      completionMode
-                      onClose={() => setCompletionJobId(null)}
-                      onDone={async () => {
-                        setCompletionJobId(null);
-                        await onUpdated();
-                      }}
-                    />
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                      <span className={job.status === "Assigned" ? "status unassigned" : "status assigned"}>{job.status}</span>
+                      <span className="link-btn" style={{ fontSize: '13px' }}>{isOpen ? "Hide" : "Details"}</span>
+                    </div>
                   </div>
-                )}
 
-                {invoiceJobId === job.id && booking && (
-                  <InvoiceBuilder
-                    job={job}
-                    booking={booking}
-                    services={services}
-                    inventory={inventory}
-                    technicianParts={technicianParts}
-                    coverages={coverages}
-                    invoices={invoices}
-                    amcPlans={amcPlans}
-                    products={products}
-                    salesPersons={salesPersons}
-                    businessSettings={businessSettings}
-                    onClose={() => setInvoiceJobId(null)}
-                    onDone={async () => {
-                      setInvoiceJobId(null);
-                      await onUpdated();
-                    }}
-                  />
-                )}
-              </div>
-            );
-          })
+                  {isOpen && (
+                    <div className="mt-sm" style={{ borderTop: "1px solid #e5e7eb", paddingTop: "16px" }}>
+                      {booking ? <BookingMini booking={booking} /> : <p className="muted">Booking not found.</p>}
+
+                      <p className="mt-sm">
+                        <strong>Current Status:</strong> {job.status}
+                      </p>
+
+                      <div className="row-actions mt-sm">
+                        <a className="ghost-btn small" href={`tel:${booking?.mobile || ""}`}>
+                          Call
+                        </a>
+
+                        <a
+                          className="ghost-btn small"
+                          href={buildWhatsAppUrl(booking?.mobile, customerGreetingMessage(booking?.customer_name, businessSettings?.business_name))}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          WhatsApp
+                        </a>
+
+                        {job.status === "Assigned" && (
+                          <button
+                            className="primary-btn small"
+                            onClick={() => {
+                              updateStatus(job, "In Progress");
+                              startTracking("job", job.id);
+                            }}
+                          >
+                            Start Job
+                          </button>
+                        )}
+
+                        {job.status === "In Progress" && (
+                          <button
+                            className="primary-btn small"
+                            onClick={() => updateStatus(job, "Completed")}
+                          >
+                            Close Job
+                          </button>
+                        )}
+
+                        {job.status === "In Progress" && tracking.active && String(tracking.jobId || "") === String(job.id) && (
+                          <button className="ghost-btn small" onClick={stopTracking}>Stop Duty</button>
+                        )}
+
+                        {hasInvoice && <span className="status assigned">Invoice Generated</span>}
+                      </div>
+
+                      {completionJobId === job.id && booking && (
+                        <div className="sub-panel mt-sm">
+                          <h3>Close Job & Add Parts</h3>
+                          <BookingMini booking={booking} />
+                          <p className="muted">Please add any used parts below. If this is a free/warranty service (₹0), an OTP will be required to close.</p>
+                          <div className="row-actions">
+                            <button className="primary-btn small" onClick={() => setCompletionInvoiceType("service")}>Add Parts & Close</button>
+                            <button className="ghost-btn small" onClick={() => setCompletionInvoiceType("zero")}>Free Service / ₹0 Close</button>
+                            <button className="ghost-btn small" onClick={() => { setCompletionJobId(null); setMessage("Job close cancelled."); }}>Cancel</button>
+                          </div>
+                          <InvoiceBuilder
+                            key={`${job.id}-${completionInvoiceType}`}
+                            job={job}
+                            booking={booking}
+                            services={services}
+                            inventory={inventory}
+                            technicianParts={technicianParts}
+                            coverages={coverages}
+                            invoices={invoices}
+                            amcPlans={amcPlans}
+                            products={products}
+                            salesPersons={salesPersons}
+                            businessSettings={businessSettings}
+                            defaultInvoiceType={completionInvoiceType}
+                            completionMode
+                            onClose={() => setCompletionJobId(null)}
+                            onDone={async () => {
+                              setCompletionJobId(null);
+                              await onUpdated();
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {invoiceJobId === job.id && booking && (
+                        <div className="mt-sm">
+                          <InvoiceBuilder
+                            job={job}
+                            booking={booking}
+                            services={services}
+                            inventory={inventory}
+                            technicianParts={technicianParts}
+                            coverages={coverages}
+                            invoices={invoices}
+                            amcPlans={amcPlans}
+                            products={products}
+                            salesPersons={salesPersons}
+                            businessSettings={businessSettings}
+                            onClose={() => setInvoiceJobId(null)}
+                            onDone={async () => {
+                              setInvoiceJobId(null);
+                              await onUpdated();
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </section>
     </>
