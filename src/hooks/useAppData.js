@@ -44,7 +44,9 @@ export function useAppData({ onLanguageChange } = {}) {
     setLoading(true);
     const nextData = await fetchAppData();
     setData(nextData);
-    onLanguageChange?.(nextData.businessSettings?.app_language || "en");
+    if (nextData.businessSettings?.app_language) {
+      onLanguageChange?.(nextData.businessSettings.app_language);
+    }
     setLoading(false);
   }, [onLanguageChange]);
 

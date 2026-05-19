@@ -49,6 +49,7 @@ function PageLoader() {
 }
 
 const ADMIN_PAGE_KEY = "aquabiz_admin_last_page";
+const APP_LANGUAGE_KEY = "aquabiz_app_language";
 const ADMIN_RESTORABLE_PAGES = new Set([
   "dashboard",
   "booking",
@@ -79,16 +80,26 @@ function getSavedAdminPage() {
   return ADMIN_RESTORABLE_PAGES.has(savedPage) ? savedPage : "dashboard";
 }
 
+function getSavedLanguage() {
+  const savedLanguage = localStorage.getItem(APP_LANGUAGE_KEY);
+  return ["en", "hi", "hinglish"].includes(savedLanguage) ? savedLanguage : "en";
+}
+
 export default function App() {
   const [page, setPage] = useState("login");
   const [reportFilter, setReportFilter] = useState("all");
   const [bookingDraft, setBookingDraft] = useState(null);
   const [selectedCustomerMobile, setSelectedCustomerMobile] = useState("");
-  const [language, setLanguage] = useState("en");
+  const [language, setLanguageState] = useState(getSavedLanguage);
   const [globalMessage, setGlobalMessage] = useState("");
   const [notificationPermission, setNotificationPermission] = useState(() => getNotificationPermission());
   useHindiDomTranslations(language);
   useAutoHideMessage(globalMessage, setGlobalMessage);
+  const setLanguage = useCallback((nextLanguage) => {
+    const safeLanguage = ["en", "hi", "hinglish"].includes(nextLanguage) ? nextLanguage : "en";
+    localStorage.setItem(APP_LANGUAGE_KEY, safeLanguage);
+    setLanguageState(safeLanguage);
+  }, []);
   const handleSignedIn = useCallback(() => {
     setPage(getSavedAdminPage());
   }, []);

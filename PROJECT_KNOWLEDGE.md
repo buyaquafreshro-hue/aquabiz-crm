@@ -238,6 +238,14 @@ App supports: English, Hindi, Hinglish.
 - Issues found: This is a fallback layer for exact visible phrases; dynamic/user-entered data and phrases not in the dictionary remain unchanged.
 - Next steps: Test Hindi mode across all main navigation pages, then add any missed phrase to `hindiDomTranslations.js`.
 
+### 2026-05-19 - Language Persistence Fix
+- Summary: Fixed language resetting to English after browser refresh. The selected language is now saved in localStorage under `aquabiz_app_language`, restored on app startup for every panel, and data refresh only overrides it when `business_settings.app_language` is actually present.
+- Files changed: `src/App.jsx`, `src/hooks/useAppData.js`
+- Supabase changes: None
+- Testing done: `npm.cmd run build` passed.
+- Issues found: None
+- Next steps: Select Hindi from the menu, refresh admin/technician/telecaller screens, and confirm Hindi stays selected.
+
 ### 2026-05-16 - Jobs Pipeline Bulk Assign
 - Summary: Added bulk technician assignment to the Jobs Pipeline. Admin can select multiple open/unclosed rows with checkboxes, choose one technician, and click `Bulk Assign`. Unassigned bookings are assigned and already assigned open jobs are reassigned to the selected technician. Completed/cancelled jobs cannot be selected.
 - Files changed: `src/pages/JobsPipelinePage.jsx`, `src/index.css`
