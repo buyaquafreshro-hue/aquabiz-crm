@@ -22,6 +22,8 @@ export function InventoryPage({ categories, inventory, inventoryPurchases = [], 
   const [cat, setCat] = useState(emptyCategory);
   const [showNewCategory, setShowNewCategory] = useState(false);
   const [form, setForm] = useState(emptyPart);
+  const [editPartId, setEditPartId] = useState(null);
+  const [editForm, setEditForm] = useState(emptyPart);
   const [message, setMessage] = useState("");
   const [restockItemId, setRestockItemId] = useState("");
   useAutoHideMessage(message, setMessage);
@@ -41,6 +43,24 @@ export function InventoryPage({ categories, inventory, inventoryPurchases = [], 
     setCat(emptyCategory);
     setShowNewCategory(false);
     setMessage("Category added and selected.");
+    await onUpdated();
+  }
+
+  async function saveEditPart() {
+    if (!editForm.name.trim()) return setMessage("Part name is required.");
+    const { error } = await supabase.from("inventory_items").update({
+      name: editForm.name.trim(),
+      category_id: editForm.category_id || null,
+      purchase_price: Number(editForm.purchase_price || 0),
+      selling_price: Number(editForm.selling_price || 0),
+      stock_qty: Number(editForm.stock_qty || 0),
+      low_stock_qty: Number(editForm.low_stock_qty || 0),
+      supplier_name: editForm.supplier_name.trim(),
+    }).eq("id", editPartId);
+    if (error) return setMessage(error.message);
+    setEditPartId(null);
+    setEditForm(emptyPart);
+    setMessage("Part updated successfully.");
     await onUpdated();
   }
 
@@ -208,6 +228,54 @@ export function InventoryPage({ categories, inventory, inventoryPurchases = [], 
         </Accordion>
       </section>
 
+      {editPartId && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", justifyContent: "center", alignItems: "center", padding: "20px" }}>
+          <div className="panel" style={{ width: "100%", maxWidth: "500px", background: "#fff", maxHeight: "90vh", overflowY: "auto" }}>
+            <h3>Edit Part</h3>
+            <div className="form-stack mt-sm">
+              <label>Part Name</label>
+              <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+              
+              <label>Category</label>
+              <select value={editForm.category_id} onChange={(e) => setEditForm({ ...editForm, category_id: e.target.value })}>
+                <option value="">Select Category</option>
+                {categories.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}
+              </select>
+
+              <div className="two-col mt-sm">
+                <div>
+                  <label>Purchase Price</label>
+                  <input type="number" value={editForm.purchase_price} onChange={(e) => setEditForm({ ...editForm, purchase_price: e.target.value })} />
+                </div>
+                <div>
+                  <label>Selling Price</label>
+                  <input type="number" value={editForm.selling_price} onChange={(e) => setEditForm({ ...editForm, selling_price: e.target.value })} />
+                </div>
+              </div>
+              
+              <div className="two-col">
+                <div>
+                  <label>Stock Qty</label>
+                  <input type="number" value={editForm.stock_qty} onChange={(e) => setEditForm({ ...editForm, stock_qty: e.target.value })} />
+                </div>
+                <div>
+                  <label>Low Stock Alert</label>
+                  <input type="number" value={editForm.low_stock_qty} onChange={(e) => setEditForm({ ...editForm, low_stock_qty: e.target.value })} />
+                </div>
+              </div>
+              
+              <label>Supplier Name</label>
+              <input value={editForm.supplier_name} onChange={(e) => setEditForm({ ...editForm, supplier_name: e.target.value })} />
+
+              <div className="row-actions mt-sm" style={{justifyContent: "flex-end"}}>
+                <button className="ghost-btn" onClick={() => setEditPartId(null)}>Cancel</button>
+                <button className="primary-btn" onClick={saveEditPart}>Save Changes</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <section className="panel inventory-panel">
         <Accordion title="Parts List & Restock" count={inventory.length} defaultOpen>
         <PartsTable
@@ -223,9 +291,23 @@ export function InventoryPage({ categories, inventory, inventoryPurchases = [], 
             { key: "margin", label: "Margin", sortValue: (item) => Number(item.selling_price || 0) - Number(item.purchase_price || 0), render: (item) => formatINR(Number(item.selling_price || 0) - Number(item.purchase_price || 0)) },
           ]}
           actions={(item) => (
-            <button className="primary-btn small" onClick={() => setRestockItemId(restockItemId === item.id ? "" : item.id)}>
-              {restockItemId === item.id ? "Close" : "Restock"}
-            </button>
+            <div style={{ display: "flex", gap: "5px" }}>
+              <button className="ghost-btn small" onClick={() => {
+                setEditPartId(item.id);
+                setEditForm({
+                  name: item.name || "",
+                  category_id: item.category_id || "",
+                  purchase_price: item.purchase_price || 0,
+                  selling_price: item.selling_price || 0,
+                  stock_qty: item.stock_qty || 0,
+                  low_stock_qty: item.low_stock_qty || 0,
+                  supplier_name: item.supplier_name || ""
+                });
+              }}>Edit</button>
+              <button className="primary-btn small" onClick={() => setRestockItemId(restockItemId === item.id ? "" : item.id)}>
+                {restockItemId === item.id ? "Close" : "Restock"}
+              </button>
+            </div>
           )}
           renderExpanded={renderRestockPanel}
         />

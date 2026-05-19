@@ -8,7 +8,10 @@ import { BRAND } from "./constants/defaults";
 import { useAppData } from "./hooks/useAppData";
 import { useAuthSession } from "./hooks/useAuthSession";
 import { createBackup, downloadBackupFile, restoreBackupData } from "./services/backupService";
+import { supabase } from "./supabaseClient";
 import { calculateDashboardStats } from "./utils/dashboardStats";
+import { useHindiDomTranslations } from "./utils/hindiDomTranslations";
+import { getNotificationPermission, requestNotificationPermission, showBrowserNotification } from "./utils/notificationUtils";
 import { clearRoleSession, getRoleSession, roleToAuthUser } from "./utils/roleSession";
 import { isSuccessToast, useAutoHideMessage } from "./utils/toastUtils";
 
@@ -83,6 +86,8 @@ export default function App() {
   const [selectedCustomerMobile, setSelectedCustomerMobile] = useState("");
   const [language, setLanguage] = useState("en");
   const [globalMessage, setGlobalMessage] = useState("");
+  const [notificationPermission, setNotificationPermission] = useState(() => getNotificationPermission());
+  useHindiDomTranslations(language);
   useAutoHideMessage(globalMessage, setGlobalMessage);
   const handleSignedIn = useCallback(() => {
     setPage(getSavedAdminPage());
@@ -96,6 +101,7 @@ export default function App() {
   });
   const {
     services,
+    serviceAreas,
     technicians,
     telecallers,
     bookings,
@@ -208,6 +214,66 @@ export default function App() {
   const isTelecallerMode = authUser?.id === "telecaller-mode";
   const isSalesMode = authUser?.id === "sales-mode";
 
+  const enableNotifications = useCallback(async () => {
+    const permission = await requestNotificationPermission();
+    setNotificationPermission(permission);
+    if (permission === "granted") {
+      setGlobalMessage("Notifications enabled.");
+      showBrowserNotification("AquaBiz notifications enabled", { body: "New bookings and assigned jobs will alert you here." });
+    } else if (permission === "unsupported") {
+      setGlobalMessage("Browser notifications are not supported on this device.");
+    } else {
+      setGlobalMessage("Notifications were not enabled. You can allow them from browser settings.");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!authUser) return undefined;
+
+    const channel = supabase
+      .channel("aquabiz-app-notifications")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "bookings" }, (payload) => {
+        const booking = payload.new || {};
+        const customer = booking.customer_name || "New customer";
+        const service = booking.service_type || "service";
+
+        if (!isTechnicianMode && !isTelecallerMode && !isSalesMode) {
+          const message = `New booking: ${customer} - ${service}`;
+          setGlobalMessage(message);
+          showBrowserNotification("New Booking", {
+            body: `${customer} | ${booking.mobile || ""} | ${service}`,
+            tag: `booking-${booking.id}`,
+          });
+        }
+
+        loadAll();
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_assignments" }, (payload) => {
+        const job = payload.new || {};
+        const roleSession = getRoleSession();
+        const isAssignedToCurrentTechnician =
+          isTechnicianMode &&
+          roleSession?.role === "technician" &&
+          String(roleSession.userId || "") === String(job.technician_id || "");
+
+        if (isAssignedToCurrentTechnician) {
+          const message = "New job assigned to you.";
+          setGlobalMessage(message);
+          showBrowserNotification("New Job Assigned", {
+            body: "A new service job has been assigned to you.",
+            tag: `job-${job.id}`,
+          });
+        }
+
+        loadAll();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [authUser, isTechnicianMode, isTelecallerMode, isSalesMode, loadAll]);
+
   useEffect(() => {
     if (!authUser || isTechnicianMode || isTelecallerMode || isSalesMode) return;
     if (!ADMIN_RESTORABLE_PAGES.has(page)) return;
@@ -267,9 +333,12 @@ export default function App() {
           }}
           onBackup={downloadBackup}
           onRestore={restoreBackup}
+          notificationPermission={notificationPermission}
+          onEnableNotifications={enableNotifications}
         />
 
         <main className="main-content">
+          {globalMessage && <div className={isSuccessToast(globalMessage) ? "settings-toast success" : "settings-toast error"}>{globalMessage}</div>}
           <Suspense fallback={<PageLoader />}>
           <TechnicianPanel
             jobs={jobs}
@@ -284,6 +353,7 @@ export default function App() {
             products={products}
             salesPersons={salesPersons}
             businessSettings={businessSettings}
+            language={language}
             onUpdated={loadAll}
             onLogout={() => { clearRoleSession(); setAuthUser(null); setPage("login"); }}
           />
@@ -311,12 +381,17 @@ export default function App() {
           }}
           onBackup={downloadBackup}
           onRestore={restoreBackup}
+          notificationPermission={notificationPermission}
+          onEnableNotifications={enableNotifications}
         />
 
         <main className="main-content">
+          {globalMessage && <div className={isSuccessToast(globalMessage) ? "settings-toast success" : "settings-toast error"}>{globalMessage}</div>}
           <Suspense fallback={<PageLoader />}>
           <TelecallerPanel
             telecallers={telecallers}
+            salesPersons={salesPersons}
+            serviceAreas={serviceAreas}
             leads={leads}
             services={services}
             technicians={technicians}
@@ -324,6 +399,7 @@ export default function App() {
             bookings={bookings}
             jobs={jobs}
             invoices={invoices}
+            businessSettings={businessSettings}
             onUpdated={loadAll}
             onLogout={() => { clearRoleSession(); setAuthUser(null); setPage("login"); }}
           />
@@ -350,11 +426,14 @@ export default function App() {
           }}
           onBackup={downloadBackup}
           onRestore={restoreBackup}
+          notificationPermission={notificationPermission}
+          onEnableNotifications={enableNotifications}
         />
 
         <main className="main-content">
+          {globalMessage && <div className={isSuccessToast(globalMessage) ? "settings-toast success" : "settings-toast error"}>{globalMessage}</div>}
           <Suspense fallback={<PageLoader />}>
-            <SalesLogin salesPersons={salesPersons} invoices={invoices} onLogout={() => { clearRoleSession(); setAuthUser(null); setPage("login"); }} />
+            <SalesLogin salesPersons={salesPersons} leads={leads} invoices={invoices} onUpdated={loadAll} onLogout={() => { clearRoleSession(); setAuthUser(null); setPage("login"); }} />
           </Suspense>
         </main>
       </div>
@@ -378,6 +457,8 @@ export default function App() {
         }}
         onBackup={downloadBackup}
           onRestore={restoreBackup}
+          notificationPermission={notificationPermission}
+          onEnableNotifications={enableNotifications}
         />
       {globalMessage && <div className={isSuccessToast(globalMessage) ? "settings-toast success" : "settings-toast error"}>{globalMessage}</div>}
       <main className="main-content">
@@ -406,25 +487,25 @@ export default function App() {
           />
         )}
 
-        {page === "booking" && <NewBooking services={services} technicians={technicians} customers={customers} initialLead={bookingDraft} onDone={async () => { setBookingDraft(null); await loadAll(); setPage("jobsPipeline"); }} />}
-        {page === "jobsPipeline" && <JobsPipelinePage bookings={bookings} jobs={jobs} technicians={technicians} telecallers={telecallers} invoices={invoices} services={services} inventory={inventory} technicianParts={technicianParts} coverages={coverages} amcPlans={amcPlans} products={products} salesPersons={salesPersons} businessSettings={businessSettings} onUpdated={loadAll} setPage={setPage} />}
+        {page === "booking" && <NewBooking services={services} serviceAreas={serviceAreas} technicians={technicians} customers={customers} initialLead={bookingDraft} onDone={async () => { setBookingDraft(null); await loadAll(); setPage("jobsPipeline"); }} />}
+        {page === "jobsPipeline" && <JobsPipelinePage bookings={bookings} jobs={jobs} technicians={technicians} telecallers={telecallers} serviceAreas={serviceAreas} invoices={invoices} services={services} inventory={inventory} technicianParts={technicianParts} coverages={coverages} amcPlans={amcPlans} products={products} salesPersons={salesPersons} businessSettings={businessSettings} language={language} onUpdated={loadAll} setPage={setPage} onCustomerOpen={(mobile) => { setSelectedCustomerMobile(mobile); setPage("customerDetail"); }} />}
         {page === "technicianParts" && <TechnicianPartsPage technicians={technicians} technicianParts={technicianParts} inventory={inventory} onUpdated={loadAll} />}
         {page === "technician" && <TechnicianPanel jobs={jobs} bookings={bookings} technicians={technicians} technicianParts={technicianParts} inventory={inventory} coverages={coverages} invoices={invoices}
             amcPlans={amcPlans}
-            products={products} services={services} salesPersons={salesPersons} businessSettings={businessSettings} onUpdated={loadAll} onLogout={() => { clearRoleSession(); setAuthUser(null); setPage("login"); }} />}
+            products={products} services={services} salesPersons={salesPersons} businessSettings={businessSettings} language={language} onUpdated={loadAll} onLogout={() => { clearRoleSession(); setAuthUser(null); setPage("login"); }} />}
         {page === "inventory" && <InventoryPage categories={categories} inventory={inventory} inventoryPurchases={inventoryPurchases} onUpdated={loadAll} />}
         {page === "plans" && <PlansPage categories={categories} inventory={inventory} amcPlans={amcPlans} products={products} onUpdated={loadAll} />}
         {page === "sale" && <AmcSalePage amcPlans={amcPlans} products={products} coverages={coverages} invoices={invoices} salesPersons={salesPersons} onUpdated={loadAll} />}
-        {page === "leads" && <LeadsPage leads={leads} customers={customers} telecallers={telecallers} onUpdated={loadAll} setPage={setPage} onCreateBooking={(lead) => { setBookingDraft(lead); setPage("booking"); }} />}
+        {page === "leads" && <LeadsPage leads={leads} customers={customers} telecallers={telecallers} salesPersons={salesPersons} onUpdated={loadAll} setPage={setPage} onCreateBooking={(lead) => { setBookingDraft(lead); setPage("booking"); }} />}
         {page === "collections" && <CollectionsPage invoices={invoices} invoicePayments={invoicePayments} businessSettings={businessSettings} onUpdated={loadAll} />}
         {page === "reminders" && <ReminderCenter coverages={coverages} invoices={invoices} leads={leads} businessSettings={businessSettings} onUpdated={loadAll} />}
-        {page === "reports" && <ReportsPage invoices={invoices} invoiceItems={invoiceItems} usage={usage} jobs={jobs} technicians={technicians} bookings={bookings} customers={customers} inventory={inventory} coverages={coverages} leads={leads} initialFilter={reportFilter} />}
-        {page === "customers" && <CustomerHistoryPage mode="list" customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} businessSettings={businessSettings} onUpdated={loadAll} onCustomerOpen={(mobile) => { setSelectedCustomerMobile(mobile); setPage("customerDetail"); }} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "" }); setPage("booking"); }} />}
-        {page === "customerHistory" && <CustomerHistoryPage mode="search" customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} businessSettings={businessSettings} onUpdated={loadAll} onCustomerOpen={(mobile) => { setSelectedCustomerMobile(mobile); setPage("customerDetail"); }} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "" }); setPage("booking"); }} />}
-        {page === "customerDetail" && <CustomerHistoryPage mode="detail" initialMobile={selectedCustomerMobile} customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} businessSettings={businessSettings} onUpdated={loadAll} onBack={() => setPage("customers")} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "" }); setPage("booking"); }} />}
+        {page === "reports" && <ReportsPage invoices={invoices} invoiceItems={invoiceItems} usage={usage} jobs={jobs} technicians={technicians} bookings={bookings} customers={customers} inventory={inventory} coverages={coverages} leads={leads} services={services} technicianParts={technicianParts} amcPlans={amcPlans} products={products} salesPersons={salesPersons} businessSettings={businessSettings} initialFilter={reportFilter} onUpdated={loadAll} />}
+        {page === "customers" && <CustomerHistoryPage mode="list" customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} businessSettings={businessSettings} onUpdated={loadAll} onCustomerOpen={(mobile) => { setSelectedCustomerMobile(mobile); setPage("customerDetail"); }} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "", area: customer.area || "" }); setPage("booking"); }} />}
+        {page === "customerHistory" && <CustomerHistoryPage mode="search" customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} businessSettings={businessSettings} onUpdated={loadAll} onCustomerOpen={(mobile) => { setSelectedCustomerMobile(mobile); setPage("customerDetail"); }} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "", area: customer.area || "" }); setPage("booking"); }} />}
+        {page === "customerDetail" && <CustomerHistoryPage mode="detail" initialMobile={selectedCustomerMobile} customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} businessSettings={businessSettings} onUpdated={loadAll} onBack={() => setPage("customers")} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "", area: customer.area || "" }); setPage("booking"); }} />}
         {page === "business" && <BusinessSettingsPage settings={businessSettings} language={language} setLanguage={setLanguage} onUpdated={loadAll} />}
         {page === "invoices" && <InvoicesPage invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} businessSettings={businessSettings} onUpdated={loadAll} />}
-        {page === "settings" && <SettingsPage services={services} setPage={setPage} onUpdated={loadAll} />}
+        {page === "settings" && <SettingsPage services={services} serviceAreas={serviceAreas} setPage={setPage} onUpdated={loadAll} />}
         {page === "technicianTracking" && <TechnicianTracking technicians={technicians} />}
         {page === "expenses" && <ExpensesPage expenseCategories={expenseCategories} expenses={expenses} onUpdated={loadAll} />}
         {page === "cashbook" && <CashbookPage invoices={invoices} invoicePayments={invoicePayments} expenses={expenses} payrollRuns={payrollRuns} cashbookOpenings={cashbookOpenings} onUpdated={loadAll} />}

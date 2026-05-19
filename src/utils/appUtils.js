@@ -2,6 +2,13 @@ export function formatINR(value) {
   return `₹${Number(value || 0).toLocaleString("en-IN")}`;
 }
 
+export function formatISTDate(dateValue) {
+  if (!dateValue) return "";
+  const d = new Date(dateValue);
+  if (isNaN(d.getTime())) return String(dateValue);
+  return d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+}
+
 export function todayISO() {
   const d = new Date();
   const year = d.getFullYear();
@@ -136,6 +143,41 @@ export function isCompletedStatus(status) {
   return ["completed", "complete", "done", "closed"].includes(value);
 }
 
+export function isServiceInvoice(invoice) {
+  return invoice?.booking_id && !["amc", "new_sale"].includes(invoice.invoice_type);
+}
+
+export function findServiceInvoiceForBooking(invoices = [], bookingId) {
+  return invoices.find((invoice) => String(invoice.booking_id || "") === String(bookingId || "") && isServiceInvoice(invoice));
+}
+
+export function getNoInvoiceReason(job, booking) {
+  return String(
+    job?.no_invoice_reason ||
+    booking?.no_invoice_reason ||
+    job?.close_reason ||
+    booking?.close_reason ||
+    job?.completion_reason ||
+    booking?.completion_reason ||
+    ""
+  ).trim();
+}
+
+export function getCompletedJobInvoiceState(job, invoices = [], booking) {
+  const invoice = findServiceInvoiceForBooking(invoices, job?.booking_id);
+  const noInvoiceReason = getNoInvoiceReason(job, booking);
+  const invoiceWaived = !!noInvoiceReason || job?.invoice_required === false || booking?.invoice_required === false;
+  return {
+    invoice,
+    hasInvoice: !!invoice,
+    noInvoiceReason,
+    invoiceWaived,
+    isInvoicePending: !invoice && !invoiceWaived,
+    label: invoice ? "Completed + Invoiced" : invoiceWaived ? "Completed / No Invoice Required" : "Completed / Invoice Pending",
+    badge: invoice ? "Invoiced" : invoiceWaived ? (noInvoiceReason || "No Invoice Required") : "Invoice Pending",
+  };
+}
+
 export function getCompletedJobsCount(jobs = [], invoices = []) {
   const completedBookingIds = new Set();
 
@@ -146,7 +188,7 @@ export function getCompletedJobsCount(jobs = [], invoices = []) {
   });
 
   invoices.forEach((invoice) => {
-    if (invoice.booking_id && !["amc", "new_sale"].includes(invoice.invoice_type)) {
+    if (isServiceInvoice(invoice)) {
       completedBookingIds.add(String(invoice.booking_id));
     }
   });

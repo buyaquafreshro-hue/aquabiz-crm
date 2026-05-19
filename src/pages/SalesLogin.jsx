@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
-import { formatINR } from "../utils/appUtils";
+import { supabase } from "../supabaseClient";
+import { formatINR, todayISO } from "../utils/appUtils";
 import { clearRoleSession, getRoleSession, saveRoleSession } from "../utils/roleSession";
 import { calculateSalesStats } from "../utils/salesUtils";
 import { useAutoHideMessage } from "../utils/toastUtils";
+import { buildWhatsAppUrl, customerGreetingMessage } from "../utils/whatsappUtils";
 
 const SALES_SESSION_KEY = "aquabiz_sales_person";
 
-export function SalesLogin({ salesPersons = [], invoices = [], onLogout }) {
+export function SalesLogin({ salesPersons = [], leads = [], invoices = [], onUpdated, onLogout }) {
   const [login, setLogin] = useState({ mobile: "", pin: "" });
   const [salesPerson, setSalesPerson] = useState(null);
+  const [followupDraft, setFollowupDraft] = useState({});
   const [message, setMessage] = useState("");
   useAutoHideMessage(message, setMessage);
 
@@ -75,6 +78,32 @@ export function SalesLogin({ salesPersons = [], invoices = [], onLogout }) {
   }
 
   const stats = calculateSalesStats({ salesPerson, invoices });
+  const myFollowups = leads.filter((lead) => {
+    const ownerType = String(lead.follow_up_owner_type || "");
+    if (ownerType) return ownerType === "sales" && String(lead.follow_up_owner_id || "") === String(salesPerson.id);
+    return String(lead.assigned_sales_person_id || "") === String(salesPerson.id);
+  });
+
+  async function saveLeadFollowup(lead) {
+    const draft = followupDraft[lead.id] || {};
+    const nextDate = draft.date || lead.follow_up_date || todayISO();
+    const summary = String(draft.summary || "").trim();
+    if (!summary) return setMessage("Follow-up summary is required.");
+
+    const oldNotes = String(lead.notes || "").trim();
+    const newEntry = `[${todayISO()}] Sales follow-up: ${nextDate} | ${summary}`;
+    const notes = oldNotes ? `${oldNotes}\n${newEntry}` : newEntry;
+
+    const { error } = await supabase
+      .from("leads")
+      .update({ follow_up_date: nextDate, notes, status: "Follow Up" })
+      .eq("id", lead.id);
+
+    if (error) return setMessage(error.message);
+    setFollowupDraft({ ...followupDraft, [lead.id]: { date: nextDate, summary: "" } });
+    setMessage("Follow-up saved.");
+    await onUpdated?.();
+  }
 
   return (
     <>
@@ -103,6 +132,47 @@ export function SalesLogin({ salesPersons = [], invoices = [], onLogout }) {
             <p>Incentive: {formatINR(invoice.sales_incentive_amount)}</p>
           </div>
         ))}
+      </section>
+
+      <section className="panel sales-list-panel">
+        <div className="panel-head">
+          <div>
+            <h3>Assigned Follow-ups</h3>
+            <p className="muted">{myFollowups.length} lead follow-up{myFollowups.length === 1 ? "" : "s"}</p>
+          </div>
+        </div>
+        {myFollowups.length === 0 ? <p className="muted">No lead follow-ups assigned.</p> : myFollowups.map((lead) => (
+          <div className="job-card sales-invoice-card" key={lead.id}>
+            <strong>{lead.customer_name}</strong>
+            <p>{lead.mobile} - {lead.interest || lead.service_need || "Lead"} - Follow-up: {lead.follow_up_date || "Not set"}</p>
+            {lead.area && <p className="success-line">Area: {lead.area}</p>}
+            <p className="muted">{lead.notes || "No notes yet."}</p>
+            <div className="two-col mt-sm">
+              <input
+                type="date"
+                value={followupDraft[lead.id]?.date || lead.follow_up_date || todayISO()}
+                onChange={(e) => setFollowupDraft({
+                  ...followupDraft,
+                  [lead.id]: { ...(followupDraft[lead.id] || {}), date: e.target.value },
+                })}
+              />
+              <input
+                placeholder="Conversation summary"
+                value={followupDraft[lead.id]?.summary || ""}
+                onChange={(e) => setFollowupDraft({
+                  ...followupDraft,
+                  [lead.id]: { ...(followupDraft[lead.id] || {}), summary: e.target.value },
+                })}
+              />
+            </div>
+            <div className="row-actions mt-sm">
+              <button className="primary-btn small" onClick={() => saveLeadFollowup(lead)}>Save Follow-up</button>
+              <a className="ghost-btn small" href={`tel:${lead.mobile}`}>Call</a>
+              <a className="ghost-btn small" href={buildWhatsAppUrl(lead.mobile, customerGreetingMessage(lead.customer_name))} target="_blank" rel="noreferrer">WA</a>
+            </div>
+          </div>
+        ))}
+        {message && <div className={message.includes("saved") ? "success-box" : "error-box"}>{message}</div>}
       </section>
     </>
   );

@@ -5,11 +5,12 @@ import { supabase } from "../supabaseClient";
 import { todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl, customerGreetingMessage } from "../utils/whatsappUtils";
 import { useAutoHideMessage } from "../utils/toastUtils";
-export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTelecaller = null, onUpdated, setPage, onCreateBooking }) {
+export function LeadsPage({ leads, customers = [], telecallers = [], salesPersons = [], loggedInTelecaller = null, onUpdated, setPage, onCreateBooking }) {
   const [form, setForm] = useState({ ...emptyLead, address: "", area: "", service_need: "" });
   const [showLeadForm, setShowLeadForm] = useState(!loggedInTelecaller);
   const [phoneChecked, setPhoneChecked] = useState(false);
   const [leadAssign, setLeadAssign] = useState({});
+  const [followupAssign, setFollowupAssign] = useState({});
   const [followupDraft, setFollowupDraft] = useState({});
   const [openLeadId, setOpenLeadId] = useState(null);
   const [matchedCustomer, setMatchedCustomer] = useState(null);
@@ -54,6 +55,9 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
 
     const assignedTelecallerId = loggedInTelecaller?.id || form.assigned_telecaller_id || null;
     const selectedTelecaller = loggedInTelecaller || telecallers.find((t) => String(t.id) === String(assignedTelecallerId));
+    const initialOwner = assignedTelecallerId
+      ? { type: "telecaller", id: assignedTelecallerId, name: selectedTelecaller?.name || "" }
+      : { type: "", id: "", name: "" };
 
     setSaving(true);
     const { error } = await supabase.from("leads").insert([{
@@ -69,6 +73,9 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
       telecaller_id: assignedTelecallerId,
       assigned_telecaller_id: assignedTelecallerId,
       assigned_telecaller_name: selectedTelecaller?.name || "",
+      follow_up_owner_type: initialOwner.type,
+      follow_up_owner_id: initialOwner.id || null,
+      follow_up_owner_name: initialOwner.name,
       follow_up_date: form.follow_up_date || todayISO(),
       notes: form.notes.trim(),
     }]);
@@ -136,6 +143,50 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
     await onUpdated();
   }
 
+  function ownerValueFromLead(lead) {
+    if (lead.follow_up_owner_type && lead.follow_up_owner_id) return `${lead.follow_up_owner_type}:${lead.follow_up_owner_id}`;
+    if (lead.assigned_telecaller_id || lead.telecaller_id) return `telecaller:${lead.assigned_telecaller_id || lead.telecaller_id}`;
+    if (lead.assigned_sales_person_id) return `sales:${lead.assigned_sales_person_id}`;
+    return "";
+  }
+
+  function getOwnerFromValue(value) {
+    const [type, id] = String(value || "").split(":");
+    if (type === "telecaller") {
+      const user = telecallers.find((t) => String(t.id) === String(id));
+      return { type, id, name: user?.name || "" };
+    }
+    if (type === "sales") {
+      const user = salesPersons.find((person) => String(person.id) === String(id));
+      return { type, id, name: user?.name || "" };
+    }
+    return { type: "", id: "", name: "" };
+  }
+
+  async function assignFollowupOwner(lead, value) {
+    setMessage("");
+    const owner = getOwnerFromValue(value);
+    const payload = {
+      follow_up_owner_type: owner.type,
+      follow_up_owner_id: owner.id || null,
+      follow_up_owner_name: owner.name,
+      assigned_telecaller_id: owner.type === "telecaller" ? owner.id : lead.assigned_telecaller_id || lead.telecaller_id || null,
+      assigned_telecaller_name: owner.type === "telecaller" ? owner.name : lead.assigned_telecaller_name || "",
+      assigned_sales_person_id: owner.type === "sales" ? owner.id : null,
+      assigned_sales_person_name: owner.type === "sales" ? owner.name : "",
+    };
+
+    const { error } = await supabase.from("leads").update(payload).eq("id", lead.id);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setFollowupAssign({ ...followupAssign, [lead.id]: value || "" });
+    setMessage(owner.id ? `Follow-up assigned to ${owner.name}.` : "Follow-up assignment removed.");
+    await onUpdated();
+  }
+
   async function saveLeadFollowup(lead) {
     setMessage("");
 
@@ -195,7 +246,7 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
               Existing customer found: {matchedCustomer.name} {matchedCustomer.address ? `- ${matchedCustomer.address}` : ""}
               <div className="row-actions">
                 <button className="ghost-btn small" onClick={() => setShowLeadForm(true)}>Create Follow-up</button>
-                <button className="primary-btn small" onClick={() => onCreateBooking?.({ customer_name: matchedCustomer.name, mobile: matchedCustomer.mobile, address: matchedCustomer.address || "" })}>Create Booking</button>
+                <button className="primary-btn small" onClick={() => onCreateBooking?.({ customer_name: matchedCustomer.name, mobile: matchedCustomer.mobile, address: matchedCustomer.address || "", area: matchedCustomer.area || "" })}>Create Booking</button>
                 <button className="ghost-btn small" onClick={() => setShowLeadForm(true)}>Add Note</button>
               </div>
             </div>
@@ -286,9 +337,10 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
             {isOpen && (
               <>
             <p>{lead.mobile} - {lead.source} - {lead.interest}</p>
+            {lead.area && <p className="success-line">Area: {lead.area}</p>}
             {existingCustomer && <p className="success-line">Existing customer: {existingCustomer.name} {existingCustomer.address ? `- ${existingCustomer.address}` : ""}</p>}
             <p>Follow up: {lead.follow_up_date || "Not set"}</p>
-            <p className="muted">Assigned: {lead.assigned_telecaller_name || "Not assigned"}</p>
+            <p className="muted">Follow-up owner: {lead.follow_up_owner_name || lead.assigned_sales_person_name || lead.assigned_telecaller_name || "Not assigned"}</p>
             {lead.notes && (
               <div className="muted-box">
                 {String(lead.notes).split("\n").map((line, index) => <p key={index}>{line}</p>)}
@@ -326,6 +378,22 @@ export function LeadsPage({ leads, customers = [], telecallers = [], loggedInTel
                 Assign Telecaller
               </button>
             </div>
+            {!loggedInTelecaller && (
+              <div className="two-col mt-sm">
+                <select value={followupAssign[lead.id] ?? ownerValueFromLead(lead)} onChange={(e) => setFollowupAssign({ ...followupAssign, [lead.id]: e.target.value })}>
+                  <option value="">Select follow-up owner</option>
+                  <optgroup label="Telecallers">
+                    {telecallers.filter((t) => t.is_active !== false).map((t) => <option value={`telecaller:${t.id}`} key={t.id}>{t.name} ({t.mobile})</option>)}
+                  </optgroup>
+                  <optgroup label="Sales Executives">
+                    {salesPersons.filter((person) => person.is_active !== false).map((person) => <option value={`sales:${person.id}`} key={person.id}>{person.name} ({person.mobile})</option>)}
+                  </optgroup>
+                </select>
+                <button className="primary-btn" onClick={() => assignFollowupOwner(lead, followupAssign[lead.id] ?? ownerValueFromLead(lead))}>
+                  Assign Follow-up
+                </button>
+              </div>
+            )}
             <div className="row-actions">
               {["Contacted", "Follow Up", "Converted", "Lost"].map((status) => (
                 <button className="ghost-btn small" key={status} onClick={() => updateLeadStatus(lead, status)}>{status}</button>

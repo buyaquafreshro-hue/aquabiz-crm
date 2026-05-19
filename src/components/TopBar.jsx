@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../supabaseClient";
 
-export function TopBar({ title, onRefresh, loading, language, setLanguage, authUser, onLocalLogout, onBackup, onRestore }) {
+export function TopBar({ title, onRefresh, loading, language, setLanguage, authUser, onLocalLogout, onBackup, onRestore, notificationPermission, onEnableNotifications }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const isLimitedRole = authUser?.id === "technician-mode" || authUser?.id === "telecaller-mode" || authUser?.id === "sales-mode";
@@ -63,6 +63,12 @@ export function TopBar({ title, onRefresh, loading, language, setLanguage, authU
             </label>
 
             {!isLimitedRole && <button type="button" onClick={() => { onBackup?.(); setMenuOpen(false); }}>Backup</button>}
+
+            {onEnableNotifications && notificationPermission !== "granted" && notificationPermission !== "unsupported" && (
+              <button type="button" onClick={() => { onEnableNotifications?.(); setMenuOpen(false); }}>
+                Enable Notifications
+              </button>
+            )}
 
             <button type="button" onClick={() => { window.location.href = "mailto:contact@aquabiz.in"; setMenuOpen(false); }}>
               Contact / Help

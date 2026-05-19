@@ -4,13 +4,14 @@ import { supabase } from "../supabaseClient";
 import { formatINR, generateOtp, uniqueServices } from "../utils/appUtils";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 
-export function NewBooking({ services, technicians, customers = [], initialLead = null, telecaller = null, onDone }) {
+export function NewBooking({ services, serviceAreas = [], technicians, customers = [], initialLead = null, telecaller = null, onDone }) {
   const [form, setForm] = useState(emptyBooking);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [matchedCustomer, setMatchedCustomer] = useState(null);
   useAutoHideMessage(message, setMessage);
   const cleanServices = uniqueServices(services);
+  const activeAreas = serviceAreas.filter((area) => area.is_active !== false);
   const selectedService = cleanServices.find((s) => s.id === form.serviceId) || cleanServices[0];
   const serviceAmount = Number(selectedService?.price || 0);
 
@@ -25,6 +26,7 @@ export function NewBooking({ services, technicians, customers = [], initialLead 
         name: initialLead.customer_name || prev.name,
         mobile: initialLead.mobile || prev.mobile,
         address: initialLead.address || prev.address,
+        area: initialLead.area || prev.area,
         priority: initialLead.priority || prev.priority,
         complaintNotes: initialLead.notes || prev.complaintNotes,
       }));
@@ -51,6 +53,7 @@ export function NewBooking({ services, technicians, customers = [], initialLead 
       ...prev,
       name: customer.name || prev.name,
       address: customer.address || prev.address,
+      area: customer.area || prev.area,
     }));
   }, [form.mobile, customers]);
 
@@ -72,20 +75,23 @@ export function NewBooking({ services, technicians, customers = [], initialLead 
     const { data: existingCustomer, error: customerFindError } = await supabase.from("customers").select("*").eq("mobile", cleanMobile).limit(1).maybeSingle();
     if (customerFindError) { setMessage("Customer check error: " + customerFindError.message); setSaving(false); return; }
 
-    if (!existingCustomer) {
-      const { error } = await supabase.from("customers").insert([{ name: form.name.trim(), mobile: cleanMobile, address: form.address.trim() }]);
-      if (error) { setMessage("Customer save error: " + error.message); setSaving(false); return; }
+    if (existingCustomer && (form.area || "").trim() && !existingCustomer.area) {
+      await supabase.from("customers").update({ area: form.area.trim() }).eq("id", existingCustomer.id);
     }
 
     const { data: booking, error: bookingError } = await supabase.from("bookings").insert([{
       customer_name: form.name.trim(),
       mobile: cleanMobile,
+      alternate_mobile: (form.alternateNo || "").trim(),
       service_type: selectedService?.name || "Service",
       payment_option: "pending",
       booking_amount: serviceAmount,
       address: form.address.trim(),
+      area: (form.area || "").trim(),
       complaint_notes: form.complaintNotes.trim(),
       priority: form.priority || "Normal",
+      booking_date: form.bookingDate || null,
+      booking_time: form.bookingTime || null,
       close_otp: generateOtp(),
       close_otp_verified: false,
       lead_id: initialLead?.id || null,
@@ -124,9 +130,17 @@ export function NewBooking({ services, technicians, customers = [], initialLead 
             <label>Mobile Number</label>
             <div className="mobile-input-line">
               <span>+91</span>
-              <input name="ro_customer_mobile_new" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} placeholder="98765 43210" inputMode="numeric" autoComplete="new-password" />
+              <input name="ro_customer_mobile_new" value={form.mobile || ""} onChange={(e) => setForm({ ...form, mobile: e.target.value })} placeholder="98765 43210" inputMode="numeric" autoComplete="new-password" />
             </div>
             {matchedCustomer && <p className="success-line mt-sm">Existing customer found. Name and address auto-filled.</p>}
+          </div>
+        </div>
+
+        <div className="booking-field-card">
+          <label>Alternate Number (Optional)</label>
+          <div className="mobile-input-line">
+            <span>+91</span>
+            <input value={form.alternateNo || ""} onChange={(e) => setForm({ ...form, alternateNo: e.target.value })} placeholder="Optional second number" inputMode="numeric" autoComplete="off" />
           </div>
         </div>
 
@@ -150,6 +164,31 @@ export function NewBooking({ services, technicians, customers = [], initialLead 
           <label>Service Address</label>
           <textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Apartment, Street, Locality, City..." rows={3} autoComplete="off" />
           <button className="location-link" type="button">Use Current Location</button>
+        </div>
+
+        <div className="booking-field-card">
+          <label>Area / Locality</label>
+          {activeAreas.length > 0 ? (
+            <select value={form.area || ""} onChange={(e) => setForm({ ...form, area: e.target.value })}>
+              <option value="">Select area / territory</option>
+              {activeAreas.map((area) => <option key={area.id} value={area.name}>{area.name}</option>)}
+            </select>
+          ) : (
+            <input value={form.area || ""} onChange={(e) => setForm({ ...form, area: e.target.value })} placeholder="e.g. North Delhi, Loni, Gurugram" autoComplete="off" />
+          )}
+        </div>
+
+        <div className="booking-field-card">
+          <div className="two-col">
+            <div>
+              <label>Visit Date (Optional)</label>
+              <input type="date" value={form.bookingDate || ""} onChange={(e) => setForm({ ...form, bookingDate: e.target.value })} />
+            </div>
+            <div>
+              <label>Time Slot (Optional)</label>
+              <input type="time" value={form.bookingTime || ""} onChange={(e) => setForm({ ...form, bookingTime: e.target.value })} />
+            </div>
+          </div>
         </div>
 
         <div className="booking-field-card">

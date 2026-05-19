@@ -3,6 +3,7 @@ import { supabase } from "../supabaseClient";
 export async function fetchAppData() {
   const [
     servicesRes,
+    serviceAreasRes,
     techRes,
     telecallerRes,
     bookingsRes,
@@ -34,6 +35,7 @@ export async function fetchAppData() {
     assemblyOrdersRes,
   ] = await Promise.all([
     supabase.from("services").select("*").order("name", { ascending: true }),
+    supabase.from("service_areas").select("*").order("name", { ascending: true }),
     supabase.from("technicians").select("*").order("name", { ascending: true }),
     supabase.from("telecallers").select("*").order("name", { ascending: true }),
     supabase.from("bookings").select("*").order("created_at", { ascending: false }),
@@ -67,6 +69,7 @@ export async function fetchAppData() {
 
   const responses = [
     ["services", servicesRes],
+    ["service_areas", serviceAreasRes],
     ["technicians", techRes],
     ["telecallers", telecallerRes],
     ["bookings", bookingsRes],
@@ -98,7 +101,7 @@ export async function fetchAppData() {
     ["assembly_orders", assemblyOrdersRes],
   ];
 
-  const optionalTables = new Set(["bom_templates", "bom_template_items", "assembly_orders", "assembly_order_items"]);
+  const optionalTables = new Set(["service_areas", "bom_templates", "bom_template_items", "assembly_orders", "assembly_order_items"]);
   const dataErrors = responses
     .filter(([name, res]) => res?.error && !optionalTables.has(name))
     .map(([name, res]) => `${name}: ${res.error.message}`);
@@ -115,6 +118,7 @@ export async function fetchAppData() {
 
   return {
     services: servicesRes.data || [],
+    serviceAreas: serviceAreasRes.data || [],
     technicians: techRes.data || [],
     telecallers: telecallerRes.data || [],
     bookings: bookingsRes.data || [],

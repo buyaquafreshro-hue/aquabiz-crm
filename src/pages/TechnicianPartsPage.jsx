@@ -111,8 +111,14 @@ export function TechnicianPartsPage({ technicians, technicianParts = [], invento
         <p>Assign parts to technicians and track what stock is with each technician.</p>
       </section>
 
-      <section className="panel">
-        <h3>Bulk Assign Parts</h3>
+      <section className="panel technician-parts-panel">
+        <div className="section-head technician-parts-head">
+          <div>
+            <h3>Bulk Assign Parts</h3>
+            <p className="muted">Select stock rows, enter quantity, then assign in one batch.</p>
+          </div>
+          <span className="status assigned">Selected: {selectedCount}</span>
+        </div>
         <div className="form-stack">
           <div className="two-col">
             <select value={technicianId} onChange={(e) => setTechnicianId(e.target.value)}>
@@ -121,33 +127,31 @@ export function TechnicianPartsPage({ technicians, technicianParts = [], invento
             </select>
             <input placeholder="Notes for selected parts" value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
-          <div className="part-add-actions">
+          <div className="technician-parts-toolbar">
             <button type="button" className="secondary-btn" onClick={selectAllAvailable}>Select All Available</button>
             <button type="button" className="secondary-btn" onClick={clearSelection}>Clear Selection</button>
-            <span className="muted">Selected: {selectedCount}</span>
           </div>
           <PartsTable
             items={availableInventory}
             emptyText="No available parts in inventory."
             columns={[
-              { key: "name", label: "Part Name" },
-              { key: "category_name", label: "Category", render: (row) => row.category_name || row.category || "Uncategorized" },
-              { key: "stock_qty", label: "Available Stock", sortValue: (row) => Number(row.stock_qty || 0), render: (row) => <strong>{row.stock_qty}</strong> },
               {
                 key: "assign",
-                label: "Assign",
+                label: "",
                 sortable: false,
                 render: (row) => (
-                  <label className="check-row">
-                    <input
-                      type="checkbox"
-                      checked={!!selectedPartIds[row.id]}
-                      onChange={() => togglePart(row.id)}
-                    />
-                    Select
-                  </label>
+                  <input
+                    className="sheet-checkbox"
+                    type="checkbox"
+                    aria-label={`Select ${row.name}`}
+                    checked={!!selectedPartIds[row.id]}
+                    onChange={() => togglePart(row.id)}
+                  />
                 ),
               },
+              { key: "name", label: "Part Name", render: (row) => <strong>{row.name}</strong> },
+              { key: "category_name", label: "Category", render: (row) => row.category_name || row.category || "Uncategorized" },
+              { key: "stock_qty", label: "Available", sortValue: (row) => Number(row.stock_qty || 0), render: (row) => <strong>{row.stock_qty}</strong> },
               {
                 key: "quantity",
                 label: "Qty",
@@ -158,6 +162,7 @@ export function TechnicianPartsPage({ technicians, technicianParts = [], invento
                     min="1"
                     max={row.stock_qty}
                     placeholder="Qty"
+                    className="sheet-qty-input"
                     value={qtyByPartId[row.id] || ""}
                     disabled={!selectedPartIds[row.id]}
                     onChange={(e) => updateQuantity(row.id, e.target.value)}
@@ -173,7 +178,7 @@ export function TechnicianPartsPage({ technicians, technicianParts = [], invento
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel technician-parts-panel">
         <h3>Assigned Parts</h3>
         <PartsTable
           items={assignedRows}

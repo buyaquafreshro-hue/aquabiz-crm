@@ -93,7 +93,28 @@ export async function updateBookingAssignment(bookingId, technicianId) {
     .eq("id", bookingId);
 }
 
-export async function completeJobWithInvoice({ bookingId, jobId, invoiceId }) {
+async function saveCloseMetadata({ bookingId, jobId, closedBy }) {
+  if (!closedBy) return;
+  const closedAt = new Date().toISOString();
+  const payload = {
+    closed_by_id: closedBy.id || null,
+    closed_by_name: closedBy.name || "",
+    closed_by_role: closedBy.role || "",
+    closed_at: closedAt,
+  };
+
+  if (jobId) {
+    const { error } = await supabase.from("job_assignments").update(payload).eq("id", jobId);
+    if (error) console.warn("Close-by metadata was not saved on job_assignments:", error.message);
+  }
+
+  if (bookingId) {
+    const { error } = await supabase.from("bookings").update(payload).eq("id", bookingId);
+    if (error) console.warn("Close-by metadata was not saved on bookings:", error.message);
+  }
+}
+
+export async function completeJobWithInvoice({ bookingId, jobId, invoiceId, closedBy }) {
   if (!bookingId || !jobId || !invoiceId) {
     return { error: { message: "Invoice is required before closing the job." } };
   }
@@ -104,7 +125,10 @@ export async function completeJobWithInvoice({ bookingId, jobId, invoiceId }) {
     p_invoice_id: invoiceId,
   });
 
-  if (!rpcResult.error) return { error: null };
+  if (!rpcResult.error) {
+    await saveCloseMetadata({ bookingId, jobId, closedBy });
+    return { error: null };
+  }
 
   const completedAt = new Date().toISOString();
   const { error: jobError } = await supabase
@@ -119,11 +143,16 @@ export async function completeJobWithInvoice({ bookingId, jobId, invoiceId }) {
 
   if (jobError) return { error: jobError };
 
-  return supabase
+  const bookingResult = await supabase
     .from("bookings")
     .update({
       booking_status: "completed",
       completed_at: completedAt,
     })
     .eq("id", bookingId);
+
+  if (bookingResult.error) return bookingResult;
+
+  await saveCloseMetadata({ bookingId, jobId, closedBy });
+  return { error: null };
 }

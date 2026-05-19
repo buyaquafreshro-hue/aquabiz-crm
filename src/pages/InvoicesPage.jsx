@@ -3,11 +3,14 @@ import { jsPDF } from "jspdf";
 import { InvoicePaymentForm } from "./CollectionsPage";
 import { PartsTable } from "../components/PartsTable";
 import { DetailDrawer } from "../components/shared";
-import { formatINR, todayISO } from "../utils/appUtils";
+import { supabase } from "../supabaseClient";
+import { formatINR, todayISO, formatISTDate } from "../utils/appUtils";
 import { buildWhatsAppUrl } from "../utils/whatsappUtils";
 export function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], businessSettings, onUpdated }) {
   const [paymentInvoiceId, setPaymentInvoiceId] = useState(null);
   const [detailInvoiceId, setDetailInvoiceId] = useState(null);
+  const [editInvoiceData, setEditInvoiceData] = useState(null);
+  const [editInvoiceForm, setEditInvoiceForm] = useState({ total_amount: 0, paid_amount: 0, due_amount: 0, discount: 0, payment_status: "", payment_method: "", cash_amount: 0, upi_amount: 0 });
   const business = businessSettings || {
     business_name: "AquaBiz",
     phone: "",
@@ -80,7 +83,7 @@ export function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], bus
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
-    addLine(`Invoice No: ${invoiceNo}`, `Date: ${inv.created_at ? new Date(inv.created_at).toLocaleDateString("en-IN") : ""}`);
+    addLine(`Invoice No: ${invoiceNo}`, `Date: ${inv.created_at ? formatISTDate(inv.created_at) : ""}`);
     doc.setFont("helvetica", "normal");
     addLine(`Customer: ${inv.customer_name || ""}`, `Mobile: ${inv.mobile || ""}`);
     addLine(`Type: ${inv.invoice_type || "service"}`, `Status: ${inv.payment_status || ""}`);
@@ -195,6 +198,23 @@ export function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], bus
 
   function shareWhatsApp(inv, items, index) {
     window.open(buildWhatsAppUrl(inv.mobile, invoiceText(inv, items, index)), "_blank");
+  }
+
+  async function handleEditInvoiceSubmit(e) {
+    e.preventDefault();
+    const { error } = await supabase.from("invoices").update({
+      total_amount: editInvoiceForm.total_amount,
+      paid_amount: editInvoiceForm.paid_amount,
+      due_amount: editInvoiceForm.due_amount,
+      discount: editInvoiceForm.discount,
+      payment_status: editInvoiceForm.payment_status,
+      payment_method: editInvoiceForm.payment_method,
+      cash_amount: editInvoiceForm.cash_amount,
+      upi_amount: editInvoiceForm.upi_amount
+    }).eq("id", editInvoiceData.id);
+    if (error) return alert(error.message);
+    setEditInvoiceData(null);
+    await onUpdated?.();
   }
 
   async function sharePdf(inv, items, index) {
@@ -356,7 +376,7 @@ export function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], bus
               <div class="invoice-title">
                 <h2>Invoice</h2>
                 <div><strong>No:</strong> ${invoiceNo}</div>
-                <div><strong>Date:</strong> ${new Date(inv.created_at).toLocaleDateString("en-IN")}</div>
+                <div><strong>Date:</strong> ${formatISTDate(inv.created_at)}</div>
                 <div class="status-pill">${inv.payment_status || ""}</div>
               </div>
             </div>
@@ -473,7 +493,7 @@ export function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], bus
               <div class="invoice-title">
                 <h2>Invoice</h2>
                 <div><strong>No:</strong> ${invoiceNo}</div>
-                <div><strong>Date:</strong> ${new Date(inv.created_at).toLocaleDateString("en-IN")}</div>
+                <div><strong>Date:</strong> ${formatISTDate(inv.created_at)}</div>
                 <div><strong>Status:</strong> ${inv.payment_status || ""}</div>
               </div>
             </div>
@@ -605,6 +625,19 @@ export function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], bus
                 <button className="primary-btn small" onClick={() => printInvoice(inv, items, index)}>
                   Print / Save PDF
                 </button>
+                <button className="ghost-btn small" onClick={() => {
+                  setEditInvoiceData(inv);
+                  setEditInvoiceForm({
+                    total_amount: inv.total_amount || 0,
+                    paid_amount: inv.paid_amount || 0,
+                    due_amount: inv.due_amount || 0,
+                    discount: inv.discount || 0,
+                    payment_status: inv.payment_status || "",
+                    payment_method: inv.payment_method || "",
+                    cash_amount: inv.cash_amount || 0,
+                    upi_amount: inv.upi_amount || 0
+                  });
+                }}>Edit</button>
                 <button className="ghost-btn small" onClick={() => sharePdf(inv, items, index)}>
                   Share PDF
                 </button>
@@ -629,6 +662,73 @@ export function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], bus
         })}
       </section>
 
+      {editInvoiceData && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", justifyContent: "center", alignItems: "center", padding: "20px" }}>
+          <div className="panel" style={{ width: "100%", maxWidth: "500px", background: "#fff", maxHeight: "90vh", overflowY: "auto" }}>
+            <h3>Edit Invoice</h3>
+            <p className="muted mt-sm mb-sm" style={{fontSize: '14px'}}>Update basic invoice values manually.</p>
+            <form onSubmit={handleEditInvoiceSubmit} className="form-stack mt-md">
+              <div className="two-col">
+                <div>
+                  <label>Total Amount</label>
+                  <input type="number" value={editInvoiceForm.total_amount} onChange={e => setEditInvoiceForm({...editInvoiceForm, total_amount: e.target.value})} />
+                </div>
+                <div>
+                  <label>Discount</label>
+                  <input type="number" value={editInvoiceForm.discount} onChange={e => setEditInvoiceForm({...editInvoiceForm, discount: e.target.value})} />
+                </div>
+              </div>
+              <div className="two-col">
+                <div>
+                  <label>Paid Amount</label>
+                  <input type="number" value={editInvoiceForm.paid_amount} onChange={e => setEditInvoiceForm({...editInvoiceForm, paid_amount: e.target.value})} />
+                </div>
+                <div>
+                  <label>Due Amount</label>
+                  <input type="number" value={editInvoiceForm.due_amount} onChange={e => setEditInvoiceForm({...editInvoiceForm, due_amount: e.target.value})} />
+                </div>
+              </div>
+              <div className="two-col">
+                <div>
+                  <label>Cash Amount</label>
+                  <input type="number" value={editInvoiceForm.cash_amount} onChange={e => setEditInvoiceForm({...editInvoiceForm, cash_amount: e.target.value})} />
+                </div>
+                <div>
+                  <label>UPI Amount</label>
+                  <input type="number" value={editInvoiceForm.upi_amount} onChange={e => setEditInvoiceForm({...editInvoiceForm, upi_amount: e.target.value})} />
+                </div>
+              </div>
+              <div className="two-col">
+                <div>
+                  <label>Payment Method</label>
+                  <select value={editInvoiceForm.payment_method} onChange={e => setEditInvoiceForm({...editInvoiceForm, payment_method: e.target.value})}>
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI</option>
+                    <option value="split">Split</option>
+                    <option value="pending">Pending</option>
+                    <option value="emi">EMI</option>
+                    <option value="free">Free / Covered</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Payment Status</label>
+                  <select value={editInvoiceForm.payment_status} onChange={e => setEditInvoiceForm({...editInvoiceForm, payment_status: e.target.value})}>
+                    <option value="Pending">Pending</option>
+                    <option value="Paid">Paid</option>
+                    <option value="Partial">Partial</option>
+                    <option value="Covered">Covered</option>
+                  </select>
+                </div>
+              </div>
+              <div className="row-actions mt-sm" style={{justifyContent: "flex-end", marginTop: "20px"}}>
+                <button type="button" className="ghost-btn" onClick={() => setEditInvoiceData(null)}>Cancel</button>
+                <button type="submit" className="primary-btn">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <DetailDrawer
         title={detailInvoice ? `Invoice: ${detailInvoice.customer_name || "Customer"}` : ""}
         subtitle={detailInvoice ? `${detailInvoice.mobile || ""} | ${detailInvoice.invoice_type || "invoice"}` : ""}
@@ -641,7 +741,7 @@ export function InvoicesPage({ invoices, invoiceItems, invoicePayments = [], bus
           { label: "Payment Method", value: detailInvoice.payment_method },
           { label: "Cash", value: formatINR(detailInvoice.cash_amount) },
           { label: "UPI", value: formatINR(detailInvoice.upi_amount) },
-          { label: "Created", value: detailInvoice.created_at ? new Date(detailInvoice.created_at).toLocaleString("en-IN") : "" },
+          { label: "Created", value: detailInvoice.created_at ? formatISTDate(detailInvoice.created_at) : "" },
           { label: "Booking ID", value: detailInvoice.booking_id },
           { label: "Invoice ID", value: detailInvoice.id },
         ] : []}

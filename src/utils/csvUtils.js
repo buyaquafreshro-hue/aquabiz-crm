@@ -69,7 +69,12 @@ export async function parseCustomerUploadFile(file) {
     return rows.slice(1).map((values) => {
       const record = {};
       headers.forEach((header, index) => {
-        record[header] = String(values[index] ?? "").trim();
+        const value = values[index];
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+          record[header] = value.toISOString().slice(0, 10);
+        } else {
+          record[header] = String(value ?? "").trim();
+        }
       });
       return record;
     });

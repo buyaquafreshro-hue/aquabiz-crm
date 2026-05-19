@@ -6,6 +6,7 @@ export const emptyBooking = {
   name: "",
   mobile: "",
   address: "",
+  area: "",
   complaintNotes: "",
   priority: "Normal",
   serviceId: "",

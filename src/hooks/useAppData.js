@@ -3,6 +3,7 @@ import { fetchAppData } from "../services/appDataService";
 
 const initialData = {
   services: [],
+  serviceAreas: [],
   technicians: [],
   telecallers: [],
   bookings: [],

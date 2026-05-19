@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { InvoiceBuilder } from "./InvoiceBuilder";
 import { BookingMini } from "./shared";
 import { PartsTable } from "./PartsTable";
-import { completeJobWithInvoice } from "../services/jobAssignments";
 import { supabase } from "../supabaseClient";
-import { formatINR } from "../utils/appUtils";
+import { findServiceInvoiceForBooking, formatINR } from "../utils/appUtils";
 import { calculateTechnicianStats, isOpenJobStatus } from "../utils/roleDashboard";
 import { clearRoleSession, getRoleSession, saveRoleSession } from "../utils/roleSession";
 import { buildWhatsAppUrl, customerGreetingMessage } from "../utils/whatsappUtils";
 import { useAutoHideMessage } from "../utils/toastUtils";
+import { getText } from "../constants/text";
 
 const TECH_DUTY_SESSION_KEY = "aquabiz_technician_duty_session";
 const TECH_DUTY_SESSION_MS = 18 * 60 * 60 * 1000;
@@ -51,20 +51,34 @@ function clearDutySession() {
   localStorage.removeItem(TECH_DUTY_SESSION_KEY);
 }
 
-export function TechnicianPanel({ jobs, bookings, services = [], technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, onUpdated, onLogout }) {
+export function TechnicianPanel({ jobs, bookings, services = [], technicians, technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, language = "en", onUpdated, onLogout }) {
+  const t = getText(language);
   const [login, setLogin] = useState({ mobile: "", pin: "" });
   const [loggedInTech, setLoggedInTech] = useState(null);
   const [invoiceJobId, setInvoiceJobId] = useState(null);
   const [completionJobId, setCompletionJobId] = useState(null);
   const [completionInvoiceType, setCompletionInvoiceType] = useState("service");
   const [openJobId, setOpenJobId] = useState(null);
+  const [showPartsWithMe, setShowPartsWithMe] = useState(false);
   const [tracking, setTracking] = useState({ active: false, type: "", jobId: null });
   const [message, setMessage] = useState("");
   const trackingTimerRef = useRef(null);
   useAutoHideMessage(message, setMessage);
 
   const filteredJobs = loggedInTech
-    ? jobs.filter((job) => String(job.technician_id) === String(loggedInTech.id) && isOpenJobStatus(job.status) && job.is_active !== false && job.assignment_status !== "reassigned")
+    ? jobs.filter((job) => {
+        if (String(job.technician_id) !== String(loggedInTech.id) || !isOpenJobStatus(job.status) || job.is_active === false || job.assignment_status === "reassigned") return false;
+        const booking = bookings.find(b => String(b.id) === String(job.booking_id));
+        if (booking?.booking_date) {
+           const today = new Date();
+           const yyyy = today.getFullYear();
+           const mm = String(today.getMonth() + 1).padStart(2, '0');
+           const dd = String(today.getDate()).padStart(2, '0');
+           const todayDateStr = `${yyyy}-${mm}-${dd}`;
+           if (booking.booking_date > todayDateStr) return false;
+        }
+        return true;
+      })
     : [];
   const myParts = loggedInTech
     ? technicianParts.filter((row) => String(row.technician_id) === String(loggedInTech.id))
@@ -208,18 +222,6 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
     onLogout?.();
   }
 
-  async function completeWithExistingInvoice(job) {
-    const invoice = invoices.find((i) => String(i.booking_id) === String(job.booking_id));
-    if (!invoice?.id) {
-      setMessage("Invoice is required before closing the job.");
-      return;
-    }
-    const { error } = await completeJobWithInvoice({ bookingId: job.booking_id, jobId: job.id, invoiceId: invoice.id });
-    if (error) return setMessage(error.message);
-    setMessage("Job completed.");
-    await onUpdated();
-  }
-
   function openCompletion(job, type = "service") {
     setCompletionInvoiceType(type);
     setCompletionJobId(job.id);
@@ -230,8 +232,6 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
     const booking = bookings.find((b) => String(b.id) === String(job.booking_id));
 
     if (status === "Completed") {
-      const hasInvoice = invoices.some((i) => String(i.booking_id) === String(job.booking_id));
-      if (hasInvoice) return completeWithExistingInvoice(job);
       openCompletion(job);
       return;
     }
@@ -254,16 +254,16 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
     return (
       <>
         <section className="page-head technician-page-head">
-          <h2>Technician App Login</h2>
-          <p>Technician logs in using mobile number and 6-digit PIN.</p>
+          <h2>{t.technicianApp} {t.login}</h2>
+          <p>{language === "hi" ? "टेक्नीशियन मोबाइल नंबर और 6 अंकों के पिन से लॉगिन करें।" : "Technician logs in using mobile number and 6-digit PIN."}</p>
         </section>
 
         <section className="panel technician-login-panel">
-          <h3>Login</h3>
+          <h3>{t.login}</h3>
 
           <div className="form-stack">
             <input
-              placeholder="Technician mobile number"
+              placeholder={language === "hi" ? "टेक्नीशियन मोबाइल नंबर" : "Technician mobile number"}
               inputMode="numeric"
               value={login.mobile}
               onChange={(e) => setLogin({ ...login, mobile: e.target.value })}
@@ -271,7 +271,7 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
             />
 
             <input
-              placeholder="6 digit PIN"
+              placeholder={t.pin6}
               inputMode="numeric"
               maxLength="6"
               type="password"
@@ -283,7 +283,7 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
             {message && <div className="error-box">{message}</div>}
 
             <button className="primary-btn big" onClick={handleLogin}>
-              Login
+              {t.login}
             </button>
           </div>
         </section>
@@ -294,8 +294,8 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
   return (
     <>
       <section className="page-head technician-page-head">
-        <h2>Technician App</h2>
-        <p>Logged in: {loggedInTech.name} ({loggedInTech.mobile})</p>
+        <h2>{t.technicianApp}</h2>
+        <p>{language === "hi" ? "लॉगिन" : "Logged in"}: {loggedInTech.name} ({loggedInTech.mobile})</p>
       </section>
 
       <section className="cards-grid technician-stats-grid">
@@ -303,11 +303,11 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
           const stats = calculateTechnicianStats({ technician: loggedInTech, jobs, bookings, invoices });
           return (
             <>
-              <div className="stat-card premium-stat"><strong>{stats.openPendingJobs}</strong><small>Open / Pending Jobs</small></div>
-              <div className="stat-card premium-stat"><strong>{formatINR(stats.currentMonthRevenue)}</strong><small>Current Month Revenue</small></div>
-              <div className="stat-card premium-stat"><strong>{formatINR(stats.lastMonthRevenue)}</strong><small>Last Month Revenue</small></div>
-              <div className="stat-card premium-stat"><strong>{stats.totalCompletedJobs}</strong><small>Total Jobs Completed</small></div>
-              <div className="stat-card premium-stat"><strong>{stats.repeatJobs}</strong><small>Repeat Jobs</small></div>
+              <div className="stat-card premium-stat"><strong>{stats.openPendingJobs}</strong><small>{language === "hi" ? "खुले / बकाया जॉब्स" : "Open / Pending Jobs"}</small></div>
+              <div className="stat-card premium-stat"><strong>{formatINR(stats.currentMonthRevenue)}</strong><small>{language === "hi" ? "इस महीने की आय" : "Current Month Revenue"}</small></div>
+              <div className="stat-card premium-stat"><strong>{formatINR(stats.lastMonthRevenue)}</strong><small>{language === "hi" ? "पिछले महीने की आय" : "Last Month Revenue"}</small></div>
+              <div className="stat-card premium-stat"><strong>{stats.totalCompletedJobs}</strong><small>{language === "hi" ? "कुल पूरे हुए जॉब्स" : "Total Jobs Completed"}</small></div>
+              <div className="stat-card premium-stat"><strong>{stats.repeatJobs}</strong><small>{language === "hi" ? "रिपीट जॉब्स" : "Repeat Jobs"}</small></div>
             </>
           );
         })()}
@@ -316,14 +316,14 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
       <section className="panel technician-tracking-panel">
         <div className="panel-head">
           <div>
-            <h3>Duty Status</h3>
-            <p className="muted">{tracking.active ? "You are on duty" : "You are currently off duty"}</p>
+            <h3>{t.dutyStatus}</h3>
+            <p className="muted">{tracking.active ? (language === "hi" ? "आप ड्यूटी पर हैं" : "You are on duty") : (language === "hi" ? "आप अभी ऑफ ड्यूटी हैं" : "You are currently off duty")}</p>
           </div>
           <span className={tracking.active ? "status assigned" : "status unassigned"}>{tracking.active ? "Online" : "Offline"}</span>
         </div>
         <div className="row-actions">
-          <button className="primary-btn small" onClick={() => startTracking("duty", null)} disabled={tracking.active}>Start Duty</button>
-          <button className="ghost-btn small" onClick={stopTracking} disabled={!tracking.active}>End Duty</button>
+          <button className="primary-btn small" onClick={() => startTracking("duty", null)} disabled={tracking.active}>{t.startDuty}</button>
+          <button className="ghost-btn small" onClick={stopTracking} disabled={!tracking.active}>{t.endDuty}</button>
         </div>
         <p className="helper">Duty status saves every 60 seconds while duty or job is active.</p>
         {message && <div className={message.includes("duty") || message.includes("Job in progress") ? "success-box" : "error-box"}>{message}</div>}
@@ -331,33 +331,48 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
 
       <section className="panel technician-jobs-panel">
         <div className="panel-head">
-          <h3>My Jobs</h3>
-          <button className="ghost-btn small" onClick={logout}>Logout</button>
+          <h3>{t.myJobs}</h3>
+          <button className="ghost-btn small" onClick={logout}>{t.logout}</button>
         </div>
 
         {myParts.length > 0 && (
-          <div className="sub-panel">
-            <h3>Parts With Me</h3>
-            <PartsTable
-              items={myParts.map((row) => ({ ...row, name: row.part_name, stock_qty: row.quantity, category_name: "With technician" }))}
-              showStockFilter={false}
-              emptyText="No parts with you."
-              columns={[
-                { key: "part_name", label: "Part" },
-                { key: "quantity", label: "Qty", sortValue: (row) => Number(row.quantity || 0), render: (row) => <strong>{row.quantity}</strong> },
-                { key: "notes", label: "Notes", render: (row) => row.notes || "-" },
-              ]}
-            />
-          </div>
+          <>
+            <button
+              className="parts-with-me-card"
+              type="button"
+              onClick={() => setShowPartsWithMe(!showPartsWithMe)}
+            >
+              <div>
+                <strong>{t.partsWithMe}</strong>
+                <p>{myParts.length} assigned item{myParts.length > 1 ? "s" : ""}</p>
+              </div>
+              <span className="status assigned">{showPartsWithMe ? t.hide : t.view}</span>
+            </button>
+
+            {showPartsWithMe && (
+              <div className="technician-parts-panel technician-parts-with-me">
+                <PartsTable
+                  items={myParts.map((row) => ({ ...row, name: row.part_name, stock_qty: row.quantity, category_name: "With technician" }))}
+                  showStockFilter={false}
+                  emptyText="No parts with you."
+                  columns={[
+                    { key: "part_name", label: "Part", render: (row) => <strong>{row.part_name}</strong> },
+                    { key: "quantity", label: "Qty", sortValue: (row) => Number(row.quantity || 0), render: (row) => <strong>{row.quantity}</strong> },
+                    { key: "notes", label: "Notes", render: (row) => row.notes || "-" },
+                  ]}
+                />
+              </div>
+            )}
+          </>
         )}
 
         {filteredJobs.length === 0 ? (
-          <p className="muted">No open jobs assigned to you.</p>
+          <p className="muted">{language === "hi" ? "आपको कोई खुला जॉब असाइन नहीं है।" : "No open jobs assigned to you."}</p>
         ) : (
           <div className="cards-grid">
             {filteredJobs.map((job) => {
               const booking = bookings.find((b) => String(b.id) === String(job.booking_id));
-              const hasInvoice = invoices.some((i) => String(i.booking_id) === String(job.booking_id));
+              const hasInvoice = !!findServiceInvoiceForBooking(invoices, job.booking_id);
               const isOpen = String(openJobId) === String(job.id);
 
               return (
@@ -373,11 +388,15 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
                     <div>
                       <strong>{booking?.customer_name || "Customer"}</strong>
                       <p>{booking?.service_type || "Service"} • {booking?.mobile || ""}</p>
+                      {booking?.area && <p className="success-line" style={{ fontSize: '12px', marginTop: '4px' }}><strong>Area:</strong> {booking.area}</p>}
                       <p className="muted" style={{ fontSize: '12px', marginTop: '4px' }}>{booking?.address || "Address not added"}</p>
+                      {booking?.complaint_notes && (
+                        <p className="danger-line" style={{ fontSize: '12px', marginTop: '4px' }}><strong>Notes:</strong> {booking.complaint_notes}</p>
+                      )}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
                       <span className={job.status === "Assigned" ? "status unassigned" : "status assigned"}>{job.status}</span>
-                      <span className="link-btn" style={{ fontSize: '13px' }}>{isOpen ? "Hide" : "Details"}</span>
+                      <span className="link-btn" style={{ fontSize: '13px' }}>{isOpen ? t.hide : t.details}</span>
                     </div>
                   </div>
 
@@ -386,12 +405,12 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
                       {booking ? <BookingMini booking={booking} /> : <p className="muted">Booking not found.</p>}
 
                       <p className="mt-sm">
-                        <strong>Current Status:</strong> {job.status}
+                        <strong>{t.currentStatus}:</strong> {job.status}
                       </p>
 
                       <div className="row-actions mt-sm">
                         <a className="ghost-btn small" href={`tel:${booking?.mobile || ""}`}>
-                          Call
+                          {t.call}
                         </a>
 
                         <a
@@ -411,7 +430,7 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
                               startTracking("job", job.id);
                             }}
                           >
-                            Start Job
+                            {t.startJob}
                           </button>
                         )}
 
@@ -420,26 +439,26 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
                             className="primary-btn small"
                             onClick={() => updateStatus(job, "Completed")}
                           >
-                            Close Job
+                            {t.closeJob}
                           </button>
                         )}
 
                         {job.status === "In Progress" && tracking.active && String(tracking.jobId || "") === String(job.id) && (
-                          <button className="ghost-btn small" onClick={stopTracking}>Stop Duty</button>
+                          <button className="ghost-btn small" onClick={stopTracking}>{t.stopDuty}</button>
                         )}
 
-                        {hasInvoice && <span className="status assigned">Invoice Generated</span>}
+                        {hasInvoice && <span className="status assigned">{t.invoiceGenerated}</span>}
                       </div>
 
                       {completionJobId === job.id && booking && (
                         <div className="sub-panel mt-sm">
-                          <h3>Close Job & Add Parts</h3>
+                          <h3>{language === "hi" ? "जॉब बंद करें और पार्ट्स जोड़ें" : "Close Job & Add Parts"}</h3>
                           <BookingMini booking={booking} />
                           <p className="muted">Please add any used parts below. If this is a free/warranty service (₹0), an OTP will be required to close.</p>
                           <div className="row-actions">
-                            <button className="primary-btn small" onClick={() => setCompletionInvoiceType("service")}>Add Parts & Close</button>
-                            <button className="ghost-btn small" onClick={() => setCompletionInvoiceType("zero")}>Free Service / ₹0 Close</button>
-                            <button className="ghost-btn small" onClick={() => { setCompletionJobId(null); setMessage("Job close cancelled."); }}>Cancel</button>
+                            <button className="primary-btn small" onClick={() => setCompletionInvoiceType("service")}>{language === "hi" ? "पार्ट्स जोड़ें और बंद करें" : "Add Parts & Close"}</button>
+                            <button className="ghost-btn small" onClick={() => setCompletionInvoiceType("zero")}>{language === "hi" ? "फ्री सर्विस / ₹0 बंद करें" : "Free Service / ₹0 Close"}</button>
+                            <button className="ghost-btn small" onClick={() => { setCompletionJobId(null); setMessage("Job close cancelled."); }}>{language === "hi" ? "रद्द करें" : "Cancel"}</button>
                           </div>
                           <InvoiceBuilder
                             key={`${job.id}-${completionInvoiceType}`}
@@ -454,8 +473,10 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
                             products={products}
                             salesPersons={salesPersons}
                             businessSettings={businessSettings}
+                            language={language}
                             defaultInvoiceType={completionInvoiceType}
                             completionMode
+                            closedBy={{ id: loggedInTech.id, name: loggedInTech.name, role: "Technician" }}
                             onClose={() => setCompletionJobId(null)}
                             onDone={async () => {
                               setCompletionJobId(null);
@@ -479,6 +500,8 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
                             products={products}
                             salesPersons={salesPersons}
                             businessSettings={businessSettings}
+                            language={language}
+                            closedBy={{ id: loggedInTech.id, name: loggedInTech.name, role: "Technician" }}
                             onClose={() => setInvoiceJobId(null)}
                             onDone={async () => {
                               setInvoiceJobId(null);

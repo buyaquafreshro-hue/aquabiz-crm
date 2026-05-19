@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
+import { InvoiceBuilder } from "../components/InvoiceBuilder";
 import { DetailDrawer, StatCard } from "../components/shared";
-import { formatINR, getDueAmount, getLocalMonthKey, getPaidAmount, isActive, isCompletedStatus, todayISO } from "../utils/appUtils";
+import { formatINR, getCompletedJobInvoiceState, getDueAmount, getLocalMonthKey, getPaidAmount, isActive, isCompletedStatus, todayISO, formatISTDate } from "../utils/appUtils";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 import { buildWhatsAppUrl, reminderMessage } from "../utils/whatsappUtils";
-export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technicians = [], bookings = [], customers = [], inventory = [], coverages = [], leads = [], initialFilter = "all" }) {
+export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technicians = [], bookings = [], customers = [], inventory = [], coverages = [], leads = [], services = [], technicianParts = [], amcPlans = [], products = [], salesPersons = [], businessSettings = {}, initialFilter = "all", onUpdated }) {
   const [filter, setFilter] = useState(initialFilter || "all");
   const [dateRange, setDateRange] = useState({
     from: `${getLocalMonthKey()}-01`,
@@ -11,6 +12,8 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
   });
   const [message, setMessage] = useState("");
   const [selectedDetail, setSelectedDetail] = useState(null);
+  const [invoiceJobId, setInvoiceJobId] = useState(null);
+  const [invoiceBookingId, setInvoiceBookingId] = useState(null);
   useAutoHideMessage(message, setMessage);
 
   useEffect(() => {
@@ -156,7 +159,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
         { label: "Status", value: invoice.payment_status },
         { label: "Method", value: invoice.payment_method },
         { label: "Booking", value: booking?.service_type || invoice.booking_id },
-        { label: "Created", value: invoice.created_at ? new Date(invoice.created_at).toLocaleString("en-IN") : "" },
+        { label: "Created", value: invoice.created_at ? formatISTDate(invoice.created_at) : "" },
         { label: "Invoice ID", value: invoice.id },
       ],
       lines: items.map((item) => `${item.item_name} x ${item.quantity} | Billing ${formatINR(item.billing_price)}`),
@@ -178,7 +181,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
         { label: "Job Status", value: job?.status || "No job" },
         { label: "Invoice", value: invoice ? `${invoice.payment_status || ""} | Due ${formatINR(getDueAmount(invoice))}` : "Not generated" },
         { label: "Address", value: booking.address },
-        { label: "Created", value: booking.created_at ? new Date(booking.created_at).toLocaleString("en-IN") : "" },
+        { label: "Created", value: booking.created_at ? formatISTDate(booking.created_at) : "" },
         { label: "Booking ID", value: booking.id },
       ],
       lines: booking.complaint_notes ? [`Notes: ${booking.complaint_notes}`] : [],
@@ -215,7 +218,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
         { label: "Technician", value: tech?.name || "Unknown" },
         { label: "Amount", value: formatINR(booking?.booking_amount) },
         { label: "Address", value: booking?.address },
-        { label: "Completed", value: job?.completed_at ? new Date(job.completed_at).toLocaleString("en-IN") : "" },
+        { label: "Completed", value: job?.completed_at ? formatISTDate(job.completed_at) : "" },
         { label: "Job ID", value: job?.id },
       ],
     });
@@ -307,7 +310,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
                 <strong>{b.customer_name}</strong>
                 <p>{b.mobile} • {b.service_type} • {formatINR(b.booking_amount)}</p>
               </div>
-              <span className="status assigned">{new Date(b.created_at).toLocaleDateString("en-IN")}</span>
+              <span className="status assigned">{formatISTDate(b.created_at)}</span>
             </div>
           ))}
         </section>
@@ -352,13 +355,30 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
           {completedJobs.length === 0 ? <p className="muted">No completed jobs.</p> : completedJobs.map((job) => {
             const tech = technicians.find((t) => String(t.id) === String(job.technician_id));
             const booking = bookings.find((b) => String(b.id) === String(job.booking_id));
+            const invoiceState = getCompletedJobInvoiceState(job, invoices, booking);
             return (
               <div className="booking-row clickable-row" key={job.id} role="button" tabIndex={0} onClick={() => openJobDetail(job)} onKeyDown={(event) => { if (event.key === "Enter") openJobDetail(job); }}>
                 <div>
                   <strong>{booking?.customer_name || "Customer"}</strong>
                   <p>{booking?.mobile} • Technician: {tech?.name || "Unknown"}</p>
+                  <span className={invoiceState.hasInvoice ? "status assigned" : invoiceState.invoiceWaived ? "status progress" : "status unassigned"}>{invoiceState.badge}</span>
                 </div>
-                <span className="status assigned">Completed</span>
+                <div className="row-actions">
+                  <span className="status assigned">Completed</span>
+                  {invoiceState.isInvoicePending && booking && (
+                    <button
+                      className="primary-btn small"
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setInvoiceJobId(job.id);
+                        setInvoiceBookingId(booking.id);
+                      }}
+                    >
+                      Create Invoice
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -454,6 +474,33 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
           </section>
         )}
       </DetailDrawer>
+
+      {invoiceJobId && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", justifyContent: "center", alignItems: "center", padding: "20px" }}>
+          <div style={{ background: "transparent", maxHeight: "100%", overflowY: "auto", width: "100%", maxWidth: "800px" }}>
+            <InvoiceBuilder
+              job={jobs.find(j => j.id === invoiceJobId)}
+              booking={bookings.find(b => b.id === invoiceBookingId)}
+              services={services}
+              inventory={inventory}
+              technicianParts={technicianParts}
+              coverages={coverages}
+              invoices={invoices}
+              amcPlans={amcPlans}
+              products={products}
+              salesPersons={salesPersons}
+              businessSettings={businessSettings}
+              closedBy={{ id: null, name: "Admin", role: "Admin" }}
+              onClose={() => { setInvoiceJobId(null); setInvoiceBookingId(null); }}
+              onDone={async () => {
+                setInvoiceJobId(null);
+                setInvoiceBookingId(null);
+                await onUpdated?.();
+              }}
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -466,7 +513,7 @@ function ReportInvoiceList({ title, invoices, onOpen }) {
         <div className="booking-row clickable-row" key={i.id} role="button" tabIndex={0} onClick={() => onOpen?.(i)} onKeyDown={(event) => { if (event.key === "Enter") onOpen?.(i); }}>
           <div>
             <strong>{i.customer_name}</strong>
-            <p>{i.mobile} • {i.invoice_type} • {new Date(i.created_at).toLocaleDateString("en-IN")}</p>
+            <p>{i.mobile} • {i.invoice_type} • {formatISTDate(i.created_at)}</p>
           </div>
           <div>
             <strong>{formatINR(i.total_amount)}</strong>

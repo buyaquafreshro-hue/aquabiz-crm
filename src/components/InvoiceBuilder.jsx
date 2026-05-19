@@ -3,14 +3,18 @@ import { QRCodeCanvas } from "qrcode.react";
 import { FormCard } from "./shared";
 import { PartsTable, StockBadge } from "./PartsTable";
 import { completeJobWithInvoice } from "../services/jobAssignments";
+import { upsertCustomerFromBooking } from "../services/customerService";
 import { supabase } from "../supabaseClient";
-import { addDays, coverageLabel, formatINR, isActive, itemCoveredByRecord, nextEmiDueDate, nextMonthlyDate, todayISO } from "../utils/appUtils";
+import { addDays, coverageLabel, findServiceInvoiceForBooking, formatINR, isActive, itemCoveredByRecord, nextEmiDueDate, nextMonthlyDate, todayISO } from "../utils/appUtils";
 import { calculateSalesIncentive } from "../utils/salesUtils";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
-export function InvoiceBuilder({ job, booking, services = [], inventory, technicianParts = [], coverages, invoices, amcPlans = [], products = [], salesPersons = [], businessSettings = {}, defaultInvoiceType = "service", completionMode = false, onClose, onDone }) {
+import { getText } from "../constants/text";
+export function InvoiceBuilder({ job, booking, services = [], inventory, technicianParts = [], coverages, invoices, amcPlans = [], products = [], salesPersons = [], businessSettings = {}, defaultInvoiceType = "service", completionMode = false, closedBy, language = "en", onClose, onDone }) {
+  const t = getText(language);
   const [invoiceType, setInvoiceType] = useState(defaultInvoiceType);
   const matchingService = services.find((service) => String(service.name || "").trim().toLowerCase() === String(booking?.service_type || "").trim().toLowerCase());
   const defaultServiceCharge = Number(matchingService?.price ?? booking?.booking_amount ?? 0);
+  const [actualServiceCharge, setActualServiceCharge] = useState(String(defaultServiceCharge || 0));
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [selectedProductId, setSelectedProductId] = useState("");
   const [discount, setDiscount] = useState("0");
@@ -50,14 +54,14 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
   const isZeroInvoice = invoiceType === "zero";
   const serviceCovered = invoiceType === "service" && activeCoverage && Number(activeCoverage.used_visits || 0) < Number(activeCoverage.free_visits || 0);
 
-  const baseServiceCharge = Number(defaultServiceCharge || 0);
+  const baseServiceCharge = Math.max(Number(actualServiceCharge || 0), 0);
   const serviceCharge = invoiceType === "service" ? (serviceCovered ? 0 : baseServiceCharge) : 0;
 
   const planAmount = invoiceType === "amc" ? Number(selectedPlan?.price || 0) : 0;
   const productAmount = invoiceType === "new_sale" ? Number(selectedProduct?.price || 0) : 0;
   const minimumDownPayment = invoiceType === "new_sale" ? Number(selectedProduct?.min_down_payment || 0) : 0;
   const rentalAmount = invoiceType === "rental" ? Number(rentalDeposit || 0) + Number(rentalMonthly || 0) : 0;
-  const partsTotal = parts.reduce((sum, p) => sum + Number(p.billing_price || 0) * Number(p.quantity || 0), 0);
+  const partsTotal = parts.reduce((sum, p) => sum + getPartBillingPrice(p) * Number(p.quantity || 0), 0);
   const discountAmount = Number(discount || 0);
   const subtotal = serviceCharge + planAmount + productAmount + rentalAmount + partsTotal;
   const total = Math.max(subtotal - discountAmount, 0);
@@ -112,6 +116,40 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
       .reduce((sum, row) => sum + Number(row.quantity || 0), 0);
   }
 
+  function getPartInventoryItem(part) {
+    if (!part) return null;
+    if (part.id) return part;
+    return inventory.find((item) => String(item.id) === String(part.inventory_item_id));
+  }
+
+  function getPartCoverageDetails(part) {
+    const item = getPartInventoryItem(part);
+    if (!item) return { covered: false, reason: "" };
+    if (isZeroInvoice) return { covered: true, reason: zeroInvoiceReason.trim() || "Zero amount invoice" };
+    if (invoiceType === "service" && activeCoverage && itemCoveredByRecord(item, activeCoverage)) {
+      return { covered: true, reason: "Covered under AMC/Warranty" };
+    }
+    if (invoiceType === "amc" && selectedPlan && itemCoveredByRecord(item, selectedPlan)) {
+      return { covered: true, reason: "Covered in AMC plan" };
+    }
+    if (invoiceType === "new_sale" && selectedProduct && itemCoveredByRecord(item, selectedProduct)) {
+      return { covered: true, reason: "Covered in product warranty" };
+    }
+    return { covered: false, reason: "" };
+  }
+
+  function getPartBillingPrice(part) {
+    const item = getPartInventoryItem(part);
+    const price = Number(part?.actual_selling_price ?? item?.selling_price ?? 0);
+    const coverage = getPartCoverageDetails(part);
+    if (coverage.covered && (!part?.charge_covered_part || isZeroInvoice)) return 0;
+    return price;
+  }
+
+  function updatePartAt(index, patch) {
+    setParts(parts.map((part, partIndex) => (partIndex === index ? { ...part, ...patch } : part)));
+  }
+
   function addPartItem(item, requestedQty) {
     if (!item) return;
 
@@ -128,7 +166,7 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
       return;
     }
 
-    const covered = isZeroInvoice || (invoiceType === "service" && activeCoverage && itemCoveredByRecord(item, activeCoverage));
+    const coverage = getPartCoverageDetails(item);
     const selling = Number(item.selling_price || 0);
 
     setParts([
@@ -139,15 +177,43 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
         category: item.category_name,
         quantity: safeQty,
         actual_selling_price: selling,
-        billing_price: covered ? 0 : selling,
-        is_covered: !!covered,
-        covered_reason: isZeroInvoice ? (zeroInvoiceReason.trim() || "Zero amount invoice") : covered ? "Covered under AMC/Warranty" : "",
+        billing_price: coverage.covered ? 0 : selling,
+        is_covered: !!coverage.covered,
+        covered_reason: coverage.reason,
+        charge_covered_part: false,
       },
     ]);
 
     setSelectedPart("");
     setQty("1");
     setPartQtyById({ ...partQtyById, [item.id]: "1" });
+  }
+
+  function renderPartAddControl(item) {
+    const rowQty = partQtyById[item.id] || "1";
+    const techQty = getTechnicianQty(item.id);
+    const blocked = job?.technician_id && techQty < Number(rowQty || 1);
+
+    return (
+      <div className="part-name-action">
+        <div>
+          <strong>{item.name}</strong>
+          <span>{item.category_name || item.category || t.partName}</span>
+        </div>
+        <div className="part-add-actions inline">
+          <input
+            type="number"
+            min="1"
+            value={rowQty}
+            aria-label={`Quantity for ${item.name}`}
+            onChange={(e) => setPartQtyById({ ...partQtyById, [item.id]: e.target.value })}
+          />
+          <button className={blocked ? "danger-btn small" : "primary-btn small"} type="button" onClick={() => addPartItem(item, rowQty)}>
+            {t.add}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   async function createCoverageFromInvoice() {
@@ -195,8 +261,11 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
 
     if (!booking) return setMessage("Booking missing.");
 
-    const already = invoices.find((i) => String(i.booking_id) === String(booking.id));
-    if (already) return setMessage("Invoice already generated for this booking.");
+    const already =
+      invoiceType === "service" || invoiceType === "zero"
+        ? findServiceInvoiceForBooking(invoices, booking.id)
+        : invoices.find((i) => String(i.booking_id) === String(booking.id) && String(i.invoice_type) === String(invoiceType));
+    if (already) return setMessage("Invoice already generated for this booking and invoice type.");
 
     if (isZeroInvoice && !zeroInvoiceReason.trim()) return setMessage("Reason/note is required for a ₹0 invoice.");
     if (invoiceType === "amc" && !selectedPlan) return setMessage("Please select an AMC plan.");
@@ -308,6 +377,9 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
       return setMessage(invoiceError.message);
     }
 
+    const customerResult = await upsertCustomerFromBooking(booking);
+    if (customerResult.error) console.warn("Customer master was not updated from invoice:", customerResult.error.message);
+
     if (invoiceType === "amc" || invoiceType === "new_sale") {
       try {
         const createdCoverage = await createCoverageFromInvoice();
@@ -374,17 +446,26 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
       });
     }
 
-    const partItems = parts.map((p) => ({
-      invoice_id: invoice.id,
-      item_type: "part",
-      inventory_item_id: p.inventory_item_id,
-      item_name: p.part_name,
-      quantity: p.quantity,
-      actual_price: p.actual_selling_price,
-      billing_price: p.billing_price,
-      is_covered: p.is_covered,
-      covered_reason: p.covered_reason,
-    }));
+    const partItems = parts.map((p) => {
+      const coverage = getPartCoverageDetails(p);
+      const billingPrice = getPartBillingPrice(p);
+      const coveredWithoutCharge = coverage.covered && billingPrice <= 0;
+      return {
+        invoice_id: invoice.id,
+        item_type: "part",
+        inventory_item_id: p.inventory_item_id,
+        item_name: p.part_name,
+        quantity: p.quantity,
+        actual_price: p.actual_selling_price,
+        billing_price: billingPrice,
+        is_covered: coveredWithoutCharge,
+        covered_reason: coverage.covered
+          ? coveredWithoutCharge
+            ? coverage.reason
+            : `${coverage.reason} - charged manually`
+          : "",
+      };
+    });
 
     const { error: itemsError } = await supabase.from("invoice_items").insert([...items, ...partItems]);
     if (itemsError) {
@@ -405,9 +486,11 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
             part_name: part.part_name,
             quantity: part.quantity,
             actual_selling_price: part.actual_selling_price,
-            billing_price: part.billing_price,
-            is_covered: part.is_covered,
-            covered_reason: part.covered_reason,
+            billing_price: getPartBillingPrice(part),
+            is_covered: getPartCoverageDetails(part).covered && getPartBillingPrice(part) <= 0,
+            covered_reason: getPartCoverageDetails(part).covered && getPartBillingPrice(part) > 0
+              ? `${getPartCoverageDetails(part).reason} - charged manually`
+              : getPartCoverageDetails(part).reason,
             technician_id: job?.technician_id || null,
           },
         ]);
@@ -484,6 +567,7 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
         bookingId: booking.id,
         jobId: job.id,
         invoiceId: invoice.id,
+        closedBy,
       });
 
       if (completeError) {
@@ -500,17 +584,17 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
   return (
     <section className="modal-card inline-invoice">
       <div className="panel-head">
-        <h3>Generate Invoice</h3>
-        <button className="ghost-btn small" onClick={onClose}>Close</button>
+        <h3>{t.generateInvoice}</h3>
+        <button className="ghost-btn small" onClick={onClose}>{language === "hi" ? "बंद करें" : "Close"}</button>
       </div>
 
-      <FormCard label="Invoice Type">
+      <FormCard label={t.invoiceType}>
         <div className="chip-grid">
-          <button className={invoiceType === "service" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("service")}>Service Invoice</button>
-          <button className={invoiceType === "zero" ? "chip active" : "chip"} type="button" onClick={() => { setInvoiceType("zero"); setCashAmount("0"); setUpiAmount("0"); setPaymentMode("pending"); }}>₹0 Invoice</button>
-          <button className={invoiceType === "amc" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("amc")}>AMC Sale</button>
-          <button className={invoiceType === "new_sale" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("new_sale")}>New RO Sale</button>
-          <button className={invoiceType === "rental" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("rental")}>RO Rental</button>
+          <button className={invoiceType === "service" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("service")}>{t.serviceInvoice}</button>
+          <button className={invoiceType === "zero" ? "chip active" : "chip"} type="button" onClick={() => { setInvoiceType("zero"); setCashAmount("0"); setUpiAmount("0"); setPaymentMode("pending"); }}>{t.zeroInvoice}</button>
+          <button className={invoiceType === "amc" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("amc")}>{t.amcSale}</button>
+          <button className={invoiceType === "new_sale" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("new_sale")}>{t.newRoSale}</button>
+          <button className={invoiceType === "rental" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("rental")}>{t.roRental}</button>
         </div>
       </FormCard>
 
@@ -524,10 +608,20 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
             <div className="muted-box">No active AMC/Warranty found.</div>
           )}
           <div className="amount-box">
-            <strong>Service Charge</strong>
+            <strong>{t.serviceCharge}</strong>
             <strong>{formatINR(serviceCharge)}</strong>
           </div>
-          <p className="helper">Service charge is controlled from More &gt; Admin Settings &gt; Services for {booking?.service_type || "this service"}.</p>
+          <FormCard label={t.actualServiceCharge}>
+            <input
+              type="number"
+              min="0"
+              value={actualServiceCharge}
+              onChange={(e) => setActualServiceCharge(e.target.value)}
+              disabled={serviceCovered}
+              placeholder="Enter final service charge at job close"
+            />
+            <p className="helper">Reference from booking/service master: {formatINR(defaultServiceCharge)}. Final billing is entered at job close.</p>
+          </FormCard>
         </>
       )}
 
@@ -535,6 +629,10 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
         <FormCard label="₹0 Invoice Reason">
           <select value={zeroInvoiceReason} onChange={(e) => setZeroInvoiceReason(e.target.value)}>
             <option value="">Select reason/note</option>
+            <option>No Charge</option>
+            <option>Cancelled after visit</option>
+            <option>Already paid</option>
+            <option>Follow-up job</option>
             <option>Covered under AMC</option>
             <option>Covered under Warranty</option>
             <option>Free service</option>
@@ -627,36 +725,18 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
         </FormCard>
       )}
 
-      <FormCard label="Add Used Part / Extra Accessory">
+      <FormCard label={t.addUsedPart}>
         <PartsTable
           items={inventory}
           emptyText="No inventory parts found."
           columns={[
-            { key: "name", label: "Part Name" },
-            { key: "category_name", label: "Category" },
-            { key: "stock_qty", label: "Shop Stock", sortValue: (item) => Number(item.stock_qty || 0), render: (item) => <strong>{item.stock_qty}</strong> },
-            { key: "tech_stock", label: "Tech Stock", sortValue: (item) => getTechnicianQty(item.id), render: (item) => job?.technician_id ? <strong>{getTechnicianQty(item.id)}</strong> : "-" },
-            { key: "selling_price", label: "Selling", sortValue: (item) => Number(item.selling_price || 0), render: (item) => formatINR(item.selling_price) },
-            { key: "stock_status", label: "Status", render: (item) => <StockBadge item={item} /> },
+            { key: "name", label: t.partName, render: renderPartAddControl },
+            { key: "category_name", label: t.category },
+            { key: "stock_qty", label: t.shopStock, sortValue: (item) => Number(item.stock_qty || 0), render: (item) => <strong>{item.stock_qty}</strong> },
+            { key: "tech_stock", label: t.techStock, sortValue: (item) => getTechnicianQty(item.id), render: (item) => job?.technician_id ? <strong>{getTechnicianQty(item.id)}</strong> : "-" },
+            { key: "selling_price", label: t.selling, sortValue: (item) => Number(item.selling_price || 0), render: (item) => formatINR(item.selling_price) },
+            { key: "stock_status", label: t.status, render: (item) => <StockBadge item={item} /> },
           ]}
-          actions={(item) => {
-            const rowQty = partQtyById[item.id] || "1";
-            const techQty = getTechnicianQty(item.id);
-            const blocked = job?.technician_id && techQty < Number(rowQty || 1);
-            return (
-              <div className="part-add-actions">
-                <input
-                  type="number"
-                  min="1"
-                  value={rowQty}
-                  onChange={(e) => setPartQtyById({ ...partQtyById, [item.id]: e.target.value })}
-                />
-                <button className={blocked ? "danger-btn small" : "primary-btn small"} onClick={() => addPartItem(item, rowQty)}>
-                  Add
-                </button>
-              </div>
-            );
-          }}
         />
         {selectedPartItem && job?.technician_id && selectedTechnicianPartQty < Number(qty || 1) && (
           <div className="error-box mt-sm">Technician stock available: {selectedTechnicianPartQty}</div>
@@ -665,21 +745,40 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
 
       {parts.length > 0 && (
         <div className="panel sub-panel">
-          <h3>Used Parts</h3>
-          {parts.map((p, idx) => (
-            <div className="booking-row" key={idx}>
-              <div>
-                <strong>{p.part_name}</strong>
-                <p>Qty {p.quantity} • Actual {formatINR(p.actual_selling_price)} • Billing {formatINR(p.billing_price)}</p>
-                {p.is_covered && <p className="success-line">Covered under AMC/Warranty</p>}
+          <h3>{t.usedParts}</h3>
+          {parts.map((p, idx) => {
+            const coverage = getPartCoverageDetails(p);
+            const billingPrice = getPartBillingPrice(p);
+            return (
+              <div className="booking-row" key={idx}>
+                <div>
+                  <strong>{p.part_name}</strong>
+                  <p>Qty {p.quantity} • Actual {formatINR(p.actual_selling_price)} • Billing {formatINR(billingPrice)}</p>
+                  {coverage.covered && (
+                    <p className={billingPrice > 0 ? "danger-line" : "success-line"}>
+                      {billingPrice > 0 ? `${coverage.reason || "Covered under AMC/Warranty"} - charged manually` : coverage.reason || "Covered under AMC/Warranty"}
+                    </p>
+                  )}
+                </div>
+                <div className="row-actions">
+                  {coverage.covered && !isZeroInvoice && (
+                    <button
+                      className={billingPrice > 0 ? "ghost-btn small" : "primary-btn small"}
+                      type="button"
+                      onClick={() => updatePartAt(idx, { charge_covered_part: billingPrice <= 0 })}
+                    >
+                      {billingPrice > 0 ? t.waiveCharge : t.chargePart}
+                    </button>
+                  )}
+                  <button className="ghost-btn small" type="button" onClick={() => setParts(parts.filter((_, i) => i !== idx))}>{t.remove}</button>
+                </div>
               </div>
-              <button className="ghost-btn small" onClick={() => setParts(parts.filter((_, i) => i !== idx))}>Remove</button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      <FormCard label="Payment Collection">
+      <FormCard label={t.paymentCollection}>
         <div className="chip-grid">
           <button className={paymentMode === "cash" ? "chip active" : "chip"} type="button" onClick={() => { setPaymentMode("cash"); setCashAmount(String(total)); setUpiAmount("0"); }}>Cash Full</button>
           <button className={paymentMode === "upi" ? "chip active" : "chip"} type="button" onClick={() => { setPaymentMode("upi"); setCashAmount("0"); setUpiAmount(String(total)); }}>UPI Full</button>
@@ -751,7 +850,7 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
       </FormCard>
 
       <div className="amount-box total">
-        <strong>Total Invoice</strong>
+        <strong>{t.totalInvoice}</strong>
         <strong>{formatINR(total)}</strong>
       </div>
 
@@ -788,7 +887,7 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
       )}
 
       <button className="primary-btn big" onClick={() => generateInvoice()} disabled={saving}>
-        {saving ? "Saving..." : completionMode ? (total === 0 && booking?.close_otp && !otpVerified ? "Complete Job (Requires OTP)" : "Complete Job") : "Generate Final Invoice"}
+        {saving ? (language === "hi" ? "सेव हो रहा है..." : "Saving...") : completionMode ? (total === 0 && booking?.close_otp && !otpVerified ? (language === "hi" ? "जॉब पूरा करें (OTP जरूरी)" : "Complete Job (Requires OTP)") : (language === "hi" ? "जॉब पूरा करें" : "Complete Job")) : t.generateInvoice}
       </button>
     </section>
   );

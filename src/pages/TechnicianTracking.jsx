@@ -4,7 +4,7 @@ import L from "leaflet";
 import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
 import { supabase } from "../supabaseClient";
 import { detectStops, formatDuration } from "../utils/locationUtils";
-import { todayISO } from "../utils/appUtils";
+import { todayISO, formatISTDate } from "../utils/appUtils";
 import { useAutoHideMessage } from "../utils/toastUtils";
 
 const markerIcon = L.divIcon({
@@ -97,7 +97,7 @@ export function TechnicianTracking({ technicians = [] }) {
                 <Popup>
                   <strong>{row.technician?.name || row.technician_name || "Technician"}</strong><br />
                   {row.is_online ? "Online" : "Offline"}<br />
-                  Last: {new Date(row.created_at).toLocaleString()}
+                  Last: {formatISTDate(row.created_at)}
                 </Popup>
               </Marker>
             ))}
@@ -118,7 +118,7 @@ export function TechnicianTracking({ technicians = [] }) {
           {latestRows.length === 0 ? <p className="muted">No technician locations yet.</p> : latestRows.map((row) => (
             <div className="mini-card" key={row.technician_id}>
               <strong>{row.technician?.name || row.technician_name || "Technician"}</strong>
-              <p>{row.is_online ? "Online" : "Offline"} | {new Date(row.created_at).toLocaleString()}</p>
+              <p>{row.is_online ? "Online" : "Offline"} | {formatISTDate(row.created_at)}</p>
               <p>{Number(row.latitude).toFixed(5)}, {Number(row.longitude).toFixed(5)}</p>
             </div>
           ))}
@@ -131,7 +131,7 @@ export function TechnicianTracking({ technicians = [] }) {
           <div className="booking-row" key={`${stop.start.toISOString()}-${index}`}>
             <div>
               <strong>Stop {index + 1}</strong>
-              <p>{stop.start.toLocaleTimeString()} - {stop.end.toLocaleTimeString()} | {formatDuration(stop.durationMs)}</p>
+              <p>{formatISTDate(stop.start)} - {formatISTDate(stop.end)} | {formatDuration(stop.durationMs)}</p>
               <p>{stop.latitude.toFixed(5)}, {stop.longitude.toFixed(5)}</p>
             </div>
           </div>

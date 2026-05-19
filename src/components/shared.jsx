@@ -46,8 +46,9 @@ export function BookingMini({ booking }) {
   return (
     <div className="booking-mini">
       <strong>{booking.customer_name}</strong>
-      <p>{booking.mobile}</p>
+      <p>{booking.mobile}{booking.alternate_mobile ? ` / ${booking.alternate_mobile}` : ""}</p>
       <p>{booking.service_type} | {formatINR(booking.booking_amount)}</p>
+      {booking.area && <p><strong>Area:</strong> {booking.area}</p>}
       <p>{booking.address}</p>
       {booking.complaint_notes && <p><strong>Notes:</strong> {booking.complaint_notes}</p>}
     </div>

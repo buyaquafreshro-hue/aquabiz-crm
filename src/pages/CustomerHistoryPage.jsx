@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { BookingMini, StatCard } from "../components/shared";
 import { PartsTable } from "../components/PartsTable";
 import { supabase } from "../supabaseClient";
-import { coverageLabel, formatINR, getDueAmount, getPaidAmount, isActive, isCompletedStatus, normalizeMobile, todayISO } from "../utils/appUtils";
+import { coverageLabel, formatINR, getDueAmount, getPaidAmount, isActive, isCompletedStatus, normalizeMobile, todayISO, formatISTDate } from "../utils/appUtils";
 import { downloadCsv, parseCustomerUploadFile } from "../utils/csvUtils";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 import { buildWhatsAppUrl, customerGreetingMessage, invoiceShareMessage } from "../utils/whatsappUtils";
@@ -14,11 +14,13 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
   const [importing, setImporting] = useState(false);
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [manualForm, setManualForm] = useState({
-    name: "", mobile: "", address: "", area: "",
+    name: "", mobile: "", alternateMobile: "", address: "", area: "",
     invoiceDate: todayISO(), invoiceAmount: "",
     sourceType: "general_service", sourceName: "Past Service", validityDays: "365", freeVisits: "3"
   });
   const [savingManual, setSavingManual] = useState(false);
+  const [editCustomerModal, setEditCustomerModal] = useState(false);
+  const [editCustomerForm, setEditCustomerForm] = useState({ id: "", name: "", mobile: "", alternateMobile: "", address: "", area: "" });
   useAutoHideMessage(message, setMessage);
   const isListMode = mode === "list";
   const isDetailMode = mode === "detail";
@@ -156,9 +158,7 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
 
   function formatTimelineDate(value) {
     if (!value) return "Date not set";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
-    return date.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+    return formatISTDate(value);
   }
 
   function customerWhatsAppLink() {
@@ -207,9 +207,80 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
   function downloadCustomerTemplate() {
     downloadCsv(
       "aquabiz-customer-upload-template.csv",
-      ["name", "mobile", "address", "area", "notes"],
-      [["Rahul Sharma", "9876543210", "House no, area, city", "Area name", "Old customer"]]
+      ["Customer name", "Phone No.", "Alternet phone", "Address", "Invoice type", "Invoice date", "Invoice amount"],
+      [["Rahul Sharma", "9876543210", "9876500000", "House no, area, city", "Service", todayISO(), "500"]]
     );
+  }
+
+  function getUploadValue(row, keys) {
+    for (const key of keys) {
+      const normalized = String(key).trim().toLowerCase().replace(/\s+/g, "_");
+      if (row[normalized] !== undefined && row[normalized] !== null && String(row[normalized]).trim() !== "") return row[normalized];
+    }
+    return "";
+  }
+
+  function normalizeInvoiceType(value) {
+    const text = String(value || "Service").trim().toLowerCase();
+    if (text.includes("amc")) return "amc";
+    if (text.includes("new") || text.includes("machine") || text.includes("ro") || text.includes("product")) return "new_sale";
+    if (text.includes("zero") || text.includes("free") || text.includes("warranty")) return "zero";
+    return "service";
+  }
+
+  function normalizeUploadDate(value) {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const slashMatch = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+    if (slashMatch) {
+      const day = slashMatch[1].padStart(2, "0");
+      const month = slashMatch[2].padStart(2, "0");
+      const year = slashMatch[3].length === 2 ? `20${slashMatch[3]}` : slashMatch[3];
+      return `${year}-${month}-${day}`;
+    }
+    const date = new Date(text);
+    if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+    return "";
+  }
+
+  function buildCoverageFromUploadedInvoice(invoice) {
+    const invoiceDate = invoice.invoice_date || todayISO();
+    const nextDue = new Date(`${invoiceDate}T00:00:00`);
+    nextDue.setDate(nextDue.getDate() + 90);
+    const expiry = new Date(`${invoiceDate}T00:00:00`);
+    expiry.setDate(expiry.getDate() + 364);
+
+    return {
+      customer_name: invoice.customer_name,
+      mobile: invoice.mobile,
+      source_type: invoice.invoice_type === "new_sale" ? "new_sale" : invoice.invoice_type === "amc" ? "amc" : "general_service",
+      source_id: invoice.id,
+      source_name: invoice.invoice_type === "new_sale" ? "New Machine" : invoice.invoice_type === "amc" ? "AMC" : "Service",
+      coverage_type: invoice.invoice_type === "new_sale" ? "product_warranty" : invoice.invoice_type === "amc" ? "all" : "none",
+      activation_date: invoiceDate,
+      validity_days: 365,
+      expiry_date: expiry.toISOString().slice(0, 10),
+      service_reminder_days: 90,
+      next_service_due_date: nextDue.toISOString().slice(0, 10),
+      free_visits: invoice.invoice_type === "service" || invoice.invoice_type === "zero" ? 0 : 3,
+      used_visits: 0,
+    };
+  }
+
+  async function handleEditCustomerSubmit(e) {
+    e.preventDefault();
+    if (!editCustomerForm.name || !editCustomerForm.mobile) return alert("Name and mobile required.");
+    const { error } = await supabase.from("customers").update({
+      name: editCustomerForm.name,
+      mobile: normalizeMobile(editCustomerForm.mobile),
+      alternate_mobile: (editCustomerForm.alternateMobile || "").trim(),
+      address: editCustomerForm.address,
+      area: editCustomerForm.area
+    }).eq("id", editCustomerForm.id);
+    if (error) return alert(error.message);
+    setEditCustomerModal(false);
+    await onUpdated?.();
   }
 
   async function importCustomers(event) {
@@ -220,25 +291,32 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
     setImporting(true);
     try {
       const rows = await parseCustomerUploadFile(file);
-      const payload = rows
+      const parsedRows = rows
         .map((row) => {
-          const mobile = normalizeMobile(row.mobile || row.phone || row.contact || row.contact_number);
+          const mobile = normalizeMobile(getUploadValue(row, ["Phone No.", "Phone", "Mobile", "mobile", "phone", "contact", "contact number"]));
+          const invoiceDate = normalizeUploadDate(getUploadValue(row, ["Invoice date", "invoice_date", "date"]));
+          const invoiceAmount = Number(String(getUploadValue(row, ["Invoice amount", "invoice_amount", "amount", "total amount"])).replace(/,/g, "") || 0);
+          const invoiceType = normalizeInvoiceType(getUploadValue(row, ["Invoice type", "invoice_type", "type"]));
           return {
-            name: row.name || row.customer_name || row.full_name || "",
+            name: getUploadValue(row, ["Customer name", "name", "customer_name", "full_name"]),
             mobile,
-            address: row.address || row.customer_address || "",
-            area: row.area || row.locality || "",
-            notes: row.notes || row.note || "",
+            alternate_mobile: normalizeMobile(getUploadValue(row, ["Alternet phone", "Alternate phone", "Alternate mobile", "alternate_mobile", "alternate number"])),
+            address: getUploadValue(row, ["Address", "customer_address"]),
+            area: getUploadValue(row, ["Area", "locality"]),
+            notes: getUploadValue(row, ["Notes", "note"]),
+            invoice_type: invoiceType,
+            invoice_date: invoiceDate,
+            invoice_amount: invoiceAmount,
           };
         })
         .filter((row) => row.name.trim() && /^\d{10}$/.test(row.mobile));
 
-      if (payload.length === 0) {
-        setMessage("No valid customers found. CSV must have name and 10 digit mobile.");
+      if (parsedRows.length === 0) {
+        setMessage("No valid customers found. CSV must have Customer name and 10 digit Phone No.");
         return;
       }
 
-      const uniqueByMobile = Array.from(new Map(payload.map((row) => [row.mobile, row])).values());
+      const uniqueByMobile = Array.from(new Map(parsedRows.map((row) => [row.mobile, row])).values());
       const mobiles = uniqueByMobile.map((row) => row.mobile);
       const { data: existingRows, error: findError } = await supabase.from("customers").select("id,mobile").in("mobile", mobiles);
       if (findError) {
@@ -249,9 +327,17 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
       const inserts = [];
       const updates = [];
       uniqueByMobile.forEach((row) => {
+        const customerPayload = {
+          name: row.name,
+          mobile: row.mobile,
+          alternate_mobile: row.alternate_mobile || "",
+          address: row.address || "",
+          area: row.area || "",
+          notes: row.notes || "",
+        };
         const existing = existingByMobile.get(row.mobile);
-        if (existing?.id) updates.push({ id: existing.id, ...row });
-        else inserts.push(row);
+        if (existing?.id) updates.push({ id: existing.id, ...customerPayload });
+        else inserts.push(customerPayload);
       });
 
       if (inserts.length > 0) {
@@ -270,7 +356,57 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
           return;
         }
       }
-      setMessage(`${uniqueByMobile.length} customers uploaded successfully.`);
+
+      const invoiceRows = parsedRows.filter((row) => row.invoice_date && Number(row.invoice_amount || 0) >= 0);
+      let createdInvoices = [];
+      if (invoiceRows.length > 0) {
+        const { data: existingInvoices, error: invoiceFindError } = await supabase
+          .from("invoices")
+          .select("id,mobile,invoice_type,invoice_date,total_amount")
+          .in("mobile", mobiles);
+        if (invoiceFindError) {
+          setMessage(invoiceFindError.message);
+          return;
+        }
+
+        const existingInvoiceKeys = new Set((existingInvoices || []).map((invoice) => `${normalizeMobile(invoice.mobile)}|${invoice.invoice_type}|${String(invoice.invoice_date || "").slice(0, 10)}|${Number(invoice.total_amount || 0)}`));
+        const invoiceInserts = invoiceRows
+          .filter((row) => !existingInvoiceKeys.has(`${row.mobile}|${row.invoice_type}|${row.invoice_date}|${Number(row.invoice_amount || 0)}`))
+          .map((row) => ({
+            invoice_type: row.invoice_type,
+            customer_name: row.name,
+            mobile: row.mobile,
+            total_amount: Number(row.invoice_amount || 0),
+            paid_amount: Number(row.invoice_amount || 0),
+            due_amount: 0,
+            cash_amount: Number(row.invoice_amount || 0),
+            payment_status: Number(row.invoice_amount || 0) > 0 ? "Paid" : "Covered",
+            payment_method: Number(row.invoice_amount || 0) > 0 ? "cash" : "covered",
+            invoice_date: row.invoice_date,
+            invoice_reason: "Imported customer history",
+            is_zero_invoice: Number(row.invoice_amount || 0) === 0,
+          }));
+
+        if (invoiceInserts.length > 0) {
+          const { data, error } = await supabase.from("invoices").insert(invoiceInserts).select("id,customer_name,mobile,invoice_type,invoice_date");
+          if (error) {
+            setMessage(error.message);
+            return;
+          }
+          createdInvoices = data || [];
+
+          const coverageInserts = createdInvoices.map(buildCoverageFromUploadedInvoice);
+          if (coverageInserts.length > 0) {
+            const { error: coverageError } = await supabase.from("customer_coverages").insert(coverageInserts);
+            if (coverageError) {
+              setMessage(`Customers and invoices uploaded, but coverage error: ${coverageError.message}`);
+              return;
+            }
+          }
+        }
+      }
+
+      setMessage(`${uniqueByMobile.length} customers uploaded successfully. ${createdInvoices.length} invoice histories added.`);
       await onUpdated?.();
     } catch (error) {
       setMessage(error.message || "Customer upload failed.");
@@ -295,12 +431,14 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
         await supabase.from("customers").insert([{
           name: manualForm.name,
           mobile: mMobile,
+          alternate_mobile: (manualForm.alternateMobile || "").trim(),
           address: manualForm.address,
           area: manualForm.area
         }]);
       } else {
         await supabase.from("customers").update({
           name: manualForm.name,
+          alternate_mobile: (manualForm.alternateMobile || "").trim(),
           address: manualForm.address,
           area: manualForm.area
         }).eq("id", custRows[0].id);
@@ -455,6 +593,30 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
         </section>
       )}
 
+      {editCustomerModal && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", justifyContent: "center", alignItems: "center", padding: "20px" }}>
+          <div className="panel" style={{ width: "100%", maxWidth: "400px", background: "#fff" }}>
+            <h3>Edit Customer</h3>
+            <form onSubmit={handleEditCustomerSubmit} className="form-stack mt-sm">
+              <label>Name</label>
+              <input value={editCustomerForm.name} onChange={e => setEditCustomerForm({...editCustomerForm, name: e.target.value})} required />
+              <label>Mobile</label>
+              <input value={editCustomerForm.mobile} onChange={e => setEditCustomerForm({...editCustomerForm, mobile: e.target.value})} required />
+              <label>Alternate Mobile</label>
+              <input value={editCustomerForm.alternateMobile} onChange={e => setEditCustomerForm({...editCustomerForm, alternateMobile: e.target.value})} />
+              <label>Address</label>
+              <textarea value={editCustomerForm.address} onChange={e => setEditCustomerForm({...editCustomerForm, address: e.target.value})} rows={2} />
+              <label>Area / Locality</label>
+              <input value={editCustomerForm.area} onChange={e => setEditCustomerForm({...editCustomerForm, area: e.target.value})} />
+              <div className="row-actions mt-sm" style={{justifyContent: "flex-end"}}>
+                <button type="button" className="ghost-btn" onClick={() => setEditCustomerModal(false)}>Cancel</button>
+                <button type="submit" className="primary-btn">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showManualAdd && (
         <section className="modal-card">
           <div className="panel-head">
@@ -467,8 +629,11 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
               <input placeholder="Mobile Number *" type="number" required value={manualForm.mobile} onChange={e => setManualForm({...manualForm, mobile: e.target.value})} />
             </div>
             <div className="two-col">
-              <input placeholder="Address" value={manualForm.address} onChange={e => setManualForm({...manualForm, address: e.target.value})} />
+              <input placeholder="Alternate Mobile" type="number" value={manualForm.alternateMobile} onChange={e => setManualForm({...manualForm, alternateMobile: e.target.value})} />
               <input placeholder="Area / City" value={manualForm.area} onChange={e => setManualForm({...manualForm, area: e.target.value})} />
+            </div>
+            <div className="two-col">
+              <input placeholder="Address" value={manualForm.address} onChange={e => setManualForm({...manualForm, address: e.target.value})} />
             </div>
             
             <h4 className="mt-sm">Original Service / Product Details</h4>
@@ -604,6 +769,10 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
               </div>
               <div className="row-actions">
                 {isDetailMode && <button className="ghost-btn small" onClick={onBack}>Back</button>}
+                <button className="ghost-btn small" onClick={() => {
+                  setEditCustomerForm({ id: selectedCustomer.id, name: selectedCustomer.name || "", mobile: selectedCustomer.mobile || "", alternateMobile: selectedCustomer.alternate_mobile || "", address: selectedCustomer.address || "", area: selectedCustomer.area || "" });
+                  setEditCustomerModal(true);
+                }}>Edit Profile</button>
                 <button className="ghost-btn small" onClick={() => window.print()}>Print History</button>
                 <button className="primary-btn small" onClick={() => onCreateBooking?.(selectedCustomer)}>New Booking / Ticket</button>
                 <a className="ghost-btn small" href={`tel:${selectedCustomer.mobile}`}>Call</a>
@@ -611,7 +780,7 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
               </div>
             </div>
             <div className="payment-summary">
-              <div><span>Last Booking</span><strong>{lastBooking ? new Date(lastBooking.created_at).toLocaleDateString("en-IN") : "None"}</strong></div>
+              <div><span>Last Booking</span><strong>{lastBooking ? formatISTDate(lastBooking.created_at) : "None"}</strong></div>
               <div><span>Last Invoice</span><strong>{latestInvoice ? formatINR(latestInvoice.total_amount) : "None"}</strong></div>
               <div><span>Last Payment</span><strong>{latestPayment ? `${latestPayment.payment_date} • ${formatINR(Number(latestPayment.cash_amount || 0) + Number(latestPayment.upi_amount || 0))}` : "None"}</strong></div>
             </div>
@@ -687,7 +856,7 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
                 { key: "part_name", label: "Part" },
                 { key: "quantity", label: "Qty", sortValue: (row) => Number(row.quantity || 0), render: (row) => <strong>{row.quantity}</strong> },
                 { key: "invoice_number", label: "Invoice" },
-                { key: "installed_date", label: "Date", render: (row) => row.installed_date ? new Date(row.installed_date).toLocaleDateString("en-IN") : "Not set" },
+                { key: "installed_date", label: "Date", render: (row) => row.installed_date ? formatISTDate(row.installed_date) : "Not set" },
                 { key: "technician_name", label: "Technician", render: (row) => `${row.technician_name}${row.technician_mobile ? ` (${row.technician_mobile})` : ""}` },
                 { key: "billing_price", label: "Billing", sortValue: (row) => Number(row.billing_price || 0), render: (row) => formatINR(row.billing_price) },
                 { key: "status", label: "Status", render: (row) => <span className={row.is_covered ? "status assigned" : "status unassigned"}>{row.is_covered ? "Covered" : "Paid"}</span> },

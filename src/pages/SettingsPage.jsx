@@ -3,14 +3,33 @@ import { supabase } from "../supabaseClient";
 import { formatINR, uniqueServices } from "../utils/appUtils";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 
-function Accordion({ title, count, defaultOpen = false, children }) {
+function Accordion({ title, count, icon, defaultOpen = false, children }) {
   return (
     <details className="settings-accordion" defaultOpen={defaultOpen}>
       <summary>
-        <span>{title}</span>
-        {typeof count === "number" && <strong>{count}</strong>}
+        <span className="settings-tab-icon">{icon}</span>
+        <span className="settings-tab-title">{title}</span>
+        <span className="settings-tab-action">View</span>
+        <strong>{typeof count === "number" ? count : "+"}</strong>
       </summary>
       <div className="accordion-body">{children}</div>
+    </details>
+  );
+}
+
+function SettingsItemCard({ title, subtitle, status, icon, children }) {
+  return (
+    <details className="settings-item-card">
+      <summary>
+        <span className="settings-tab-icon">{icon}</span>
+        <div>
+          <strong>{title}</strong>
+          {subtitle && <p>{subtitle}</p>}
+        </div>
+        <span className="settings-tab-action">View</span>
+        {status && <span className={status === "Inactive" ? "status unassigned" : "status assigned"}>{status}</span>}
+      </summary>
+      <div className="settings-item-body">{children}</div>
     </details>
   );
 }
@@ -21,9 +40,11 @@ const DEFAULT_SERVICE_RATES = [
   { name: "Installation", price: 399 },
 ];
 
-export function SettingsPage({ services, setPage, onUpdated }) {
+export function SettingsPage({ services, serviceAreas = [], setPage, onUpdated }) {
   const [serviceForm, setServiceForm] = useState({ name: "", price: "" });
   const [serviceEdit, setServiceEdit] = useState({});
+  const [areaForm, setAreaForm] = useState({ name: "", technician_ids: [] });
+  const [areaEdit, setAreaEdit] = useState({});
   const [techForm, setTechForm] = useState({ name: "", mobile: "", pin: "123456" });
   const [techEdit, setTechEdit] = useState({});
   const [telecallerForm, setTelecallerForm] = useState({ name: "", mobile: "", pin: "123456" });
@@ -75,6 +96,22 @@ export function SettingsPage({ services, setPage, onUpdated }) {
       incentive_type: person.incentive_type || "percentage",
       incentive_value: person.incentive_value || "",
     };
+  }
+
+  function areaDraft(area) {
+    return areaEdit[area.id] || { name: area.name || "", technician_ids: Array.isArray(area.technician_ids) ? area.technician_ids : [] };
+  }
+
+  function toggleAreaTechnician(currentIds = [], technicianId) {
+    const ids = currentIds.map(String);
+    return ids.includes(String(technicianId))
+      ? ids.filter((id) => id !== String(technicianId))
+      : [...ids, String(technicianId)];
+  }
+
+  function technicianNames(ids = []) {
+    const idSet = new Set((Array.isArray(ids) ? ids : []).map(String));
+    return techniciansList.filter((tech) => idSet.has(String(tech.id))).map((tech) => tech.name).join(", ") || "No technicians linked";
   }
 
   async function addService() {
@@ -129,6 +166,41 @@ export function SettingsPage({ services, setPage, onUpdated }) {
     if (!data?.length) return setMessage(noRowsMessage("Service delete"));
     setMessage("Service deleted.");
     await onUpdated();
+  }
+
+  async function addArea() {
+    setMessage("");
+    if (!areaForm.name.trim()) return setMessage("Area / territory name is required.");
+    const { error } = await supabase.from("service_areas").insert([{
+      name: areaForm.name.trim(),
+      technician_ids: areaForm.technician_ids,
+      is_active: true,
+    }]);
+    if (error) return setMessage(error.message);
+    setAreaForm({ name: "", technician_ids: [] });
+    setMessage("Area added.");
+    await onUpdated();
+  }
+
+  async function updateArea(area, updates = null) {
+    setMessage("");
+    const draft = areaDraft(area);
+    const payload = updates || {
+      name: draft.name.trim(),
+      technician_ids: draft.technician_ids,
+    };
+    if (!updates && !payload.name) return setMessage("Area / territory name is required.");
+    const { data, error } = await supabase.from("service_areas").update(payload).eq("id", area.id).select("id");
+    if (error) return setMessage(error.message);
+    if (!data?.length) return setMessage(noRowsMessage("Area"));
+    setAreaEdit({});
+    setMessage("Area updated.");
+    await onUpdated();
+  }
+
+  async function toggleAreaStatus(area) {
+    const nextActive = area.is_active === false;
+    await updateArea(area, { is_active: nextActive });
   }
 
   async function addTechnician() {
@@ -271,24 +343,24 @@ export function SettingsPage({ services, setPage, onUpdated }) {
           <button className="ghost-btn small" type="button" onClick={applyDefaultServiceRates}>Set Default Rates</button>
           <p className="helper">Defaults: Online ₹99, COD ₹249, Installation ₹399. You can edit each rate below anytime.</p>
         </div>
-        <Accordion title="Already Added Services" count={cleanServices.length} defaultOpen>
+        <Accordion title="Already Added Services" count={cleanServices.length} icon="🧾">
           {cleanServices.length === 0 ? <p className="muted">No services added.</p> : cleanServices.map((service) => {
             const draft = serviceDraft(service);
             return (
-              <div className="booking-row edit-row" key={service.id}>
-                <div className="two-col">
-                  <input value={draft.name} onChange={(e) => setServiceEdit({ ...serviceEdit, [service.id]: { ...draft, name: e.target.value } })} />
-                  <input type="number" value={draft.price} onChange={(e) => setServiceEdit({ ...serviceEdit, [service.id]: { ...draft, price: e.target.value } })} />
+              <SettingsItemCard key={service.id} title={service.name} subtitle={`Price: ${formatINR(service.price)}`} icon="🧾">
+                <div className="settings-sheet-grid two">
+                  <label><span>Service Name</span><input value={draft.name} onChange={(e) => setServiceEdit({ ...serviceEdit, [service.id]: { ...draft, name: e.target.value } })} /></label>
+                  <label><span>Price</span><input type="number" value={draft.price} onChange={(e) => setServiceEdit({ ...serviceEdit, [service.id]: { ...draft, price: e.target.value } })} /></label>
                 </div>
                 <div className="row-actions">
                   <button className="primary-btn small" onClick={() => updateService(service)}>Save</button>
                   <button className="danger-btn small" onClick={() => deleteService(service)}>Delete</button>
                 </div>
-              </div>
+              </SettingsItemCard>
             );
           })}
         </Accordion>
-        <Accordion title="Add New Service">
+        <Accordion title="Add New Service" icon="➕">
           <div className="form-stack">
             <div className="two-col">
               <input placeholder="Service name e.g. Installation" value={serviceForm.name} onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })} />
@@ -299,9 +371,61 @@ export function SettingsPage({ services, setPage, onUpdated }) {
         </Accordion>
       </section>
 
+      <section className="panel">
+        <h3>Areas / Territories / Zones</h3>
+        <p className="helper">Add areas like North Delhi, South Delhi, Loni, Gurugram, then link technicians who normally handle that territory.</p>
+        <Accordion title="Already Added Areas" count={serviceAreas.length} icon="📍">
+          {serviceAreas.length === 0 ? <p className="muted">No areas added.</p> : serviceAreas.map((area) => {
+            const draft = areaDraft(area);
+            return (
+              <SettingsItemCard key={area.id} title={area.name} subtitle={technicianNames(draft.technician_ids)} status={area.is_active === false ? "Inactive" : "Active"} icon="📍">
+                <div className="form-stack">
+                  <label className="settings-field"><span>Area / Territory</span><input value={draft.name} onChange={(e) => setAreaEdit({ ...areaEdit, [area.id]: { ...draft, name: e.target.value } })} /></label>
+                  <div className="settings-check-grid">
+                    {techniciansList.filter((tech) => tech.is_active !== false).map((tech) => (
+                      <label className="check-row" key={tech.id}>
+                        <input
+                          type="checkbox"
+                          checked={(draft.technician_ids || []).map(String).includes(String(tech.id))}
+                          onChange={() => setAreaEdit({ ...areaEdit, [area.id]: { ...draft, technician_ids: toggleAreaTechnician(draft.technician_ids, tech.id) } })}
+                        />
+                        {tech.name}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="helper">Linked: {technicianNames(draft.technician_ids)}</p>
+                </div>
+                <div className="row-actions">
+                  <button className="primary-btn small" onClick={() => updateArea(area)}>Save</button>
+                  <button className="danger-btn small" onClick={() => toggleAreaStatus(area)}>{area.is_active === false ? "Activate" : "Deactivate"}</button>
+                </div>
+              </SettingsItemCard>
+            );
+          })}
+        </Accordion>
+        <Accordion title="Add New Area" icon="➕">
+          <div className="form-stack">
+            <input placeholder="Area / territory name e.g. North Delhi" value={areaForm.name} onChange={(e) => setAreaForm({ ...areaForm, name: e.target.value })} />
+            <div className="settings-check-grid">
+              {techniciansList.filter((tech) => tech.is_active !== false).map((tech) => (
+                <label className="check-row" key={tech.id}>
+                  <input
+                    type="checkbox"
+                    checked={areaForm.technician_ids.map(String).includes(String(tech.id))}
+                    onChange={() => setAreaForm({ ...areaForm, technician_ids: toggleAreaTechnician(areaForm.technician_ids, tech.id) })}
+                  />
+                  {tech.name}
+                </label>
+              ))}
+            </div>
+            <button className="primary-btn" onClick={addArea}>Add Area</button>
+          </div>
+        </Accordion>
+      </section>
+
       <PeopleSection title="Technicians" count={techniciansList.length} people={techniciansList} editMap={techEdit} setEditMap={setTechEdit} onSave={updateTechnician} onDelete={deleteTechnician} />
       <section className="panel">
-        <Accordion title="Add New Technician">
+        <Accordion title="Add New Technician" icon="🔧">
           <div className="form-stack">
             <div className="two-col">
               <input placeholder="Technician name" value={techForm.name} onChange={(e) => setTechForm({ ...techForm, name: e.target.value })} />
@@ -315,7 +439,7 @@ export function SettingsPage({ services, setPage, onUpdated }) {
 
       <PeopleSection title="Telecallers" count={telecallersList.length} people={telecallersList} editMap={telecallerEdit} setEditMap={setTelecallerEdit} onSave={updateTelecaller} onDelete={deleteTelecaller} />
       <section className="panel">
-        <Accordion title="Add New Telecaller">
+        <Accordion title="Add New Telecaller" icon="☎️">
           <div className="form-stack">
             <div className="two-col">
               <input placeholder="Telecaller name" value={telecallerForm.name} onChange={(e) => setTelecallerForm({ ...telecallerForm, name: e.target.value })} />
@@ -329,35 +453,30 @@ export function SettingsPage({ services, setPage, onUpdated }) {
 
       <section className="panel">
         <h3>Sales Persons</h3>
-        <Accordion title="Already Added Sales Persons" count={salesPersonsList.length}>
+        <Accordion title="Already Added Sales Persons" count={salesPersonsList.length} icon="🎯">
           {salesPersonsList.length === 0 ? <p className="muted">No sales persons added.</p> : salesPersonsList.map((person) => {
             const draft = personDraft(salesEdit, person);
             return (
-              <div className="booking-row edit-row" key={person.id}>
-                <div className="form-stack">
-                  <div className="two-col">
-                    <input value={draft.name} onChange={(e) => setSalesEdit({ ...salesEdit, [person.id]: { ...draft, name: e.target.value } })} />
-                    <input value={draft.mobile} inputMode="numeric" onChange={(e) => setSalesEdit({ ...salesEdit, [person.id]: { ...draft, mobile: e.target.value } })} />
-                  </div>
-                  <div className="two-col">
-                    <input value={draft.pin} inputMode="numeric" maxLength="6" onChange={(e) => setSalesEdit({ ...salesEdit, [person.id]: { ...draft, pin: e.target.value } })} />
-                    <select value={draft.incentive_type} onChange={(e) => setSalesEdit({ ...salesEdit, [person.id]: { ...draft, incentive_type: e.target.value } })}>
+              <SettingsItemCard key={person.id} title={person.name} subtitle={`${person.mobile || "No mobile"} | Incentive ${draft.incentive_type}: ${draft.incentive_value || 0}`} status={person.is_active === false ? "Inactive" : "Active"} icon="🎯">
+                <div className="settings-sheet-grid two">
+                  <label><span>Name</span><input value={draft.name} onChange={(e) => setSalesEdit({ ...salesEdit, [person.id]: { ...draft, name: e.target.value } })} /></label>
+                  <label><span>Mobile</span><input value={draft.mobile} inputMode="numeric" onChange={(e) => setSalesEdit({ ...salesEdit, [person.id]: { ...draft, mobile: e.target.value } })} /></label>
+                  <label><span>PIN</span><input value={draft.pin} inputMode="numeric" maxLength="6" onChange={(e) => setSalesEdit({ ...salesEdit, [person.id]: { ...draft, pin: e.target.value } })} /></label>
+                  <label><span>Incentive Type</span><select value={draft.incentive_type} onChange={(e) => setSalesEdit({ ...salesEdit, [person.id]: { ...draft, incentive_type: e.target.value } })}>
                       <option value="percentage">Percentage</option>
                       <option value="fixed">Fixed</option>
-                    </select>
-                  </div>
-                  <input type="number" value={draft.incentive_value} onChange={(e) => setSalesEdit({ ...salesEdit, [person.id]: { ...draft, incentive_value: e.target.value } })} />
+                    </select></label>
+                  <label><span>Incentive Value</span><input type="number" value={draft.incentive_value} onChange={(e) => setSalesEdit({ ...salesEdit, [person.id]: { ...draft, incentive_value: e.target.value } })} /></label>
                 </div>
                 <div className="row-actions">
                   <button className="primary-btn small" onClick={() => updateSalesPerson(person)}>Save</button>
-                  <span className={person.is_active === false ? "status unassigned" : "status assigned"}>{person.is_active === false ? "Inactive" : "Active"}</span>
                   <button className="danger-btn small" onClick={() => deleteSalesPerson(person)}>{person.is_active === false ? "Activate" : "Deactivate"}</button>
                 </div>
-              </div>
+              </SettingsItemCard>
             );
           })}
         </Accordion>
-        <Accordion title="Add New Sales Person">
+        <Accordion title="Add New Sales Person" icon="➕">
           <div className="form-stack">
             <div className="two-col">
               <input placeholder="Sales person name" value={salesForm.name} onChange={(e) => setSalesForm({ ...salesForm, name: e.target.value })} />
@@ -400,26 +519,23 @@ function PeopleSection({ title, count, people, editMap, setEditMap, onSave, onDe
   const draftFor = (person) => editMap[person.id] || { name: person.name || "", mobile: person.mobile || "", pin: person.pin || "" };
 
   return (
-    <section className="panel">
+    <section className="panel admin-settings-panel">
       <h3>{title}</h3>
-      <Accordion title={`Already Added ${title}`} count={count}>
+      <Accordion title={`Already Added ${title}`} count={count} icon={title === "Technician" ? "🔧" : "☎️"}>
         {people.length === 0 ? <p className="muted">No {title.toLowerCase()} added.</p> : people.map((person) => {
           const draft = draftFor(person);
           return (
-            <div className="booking-row edit-row" key={person.id}>
-              <div className="form-stack">
-                <div className="two-col">
-                  <input value={draft.name} onChange={(e) => setEditMap({ ...editMap, [person.id]: { ...draft, name: e.target.value } })} />
-                  <input value={draft.mobile} inputMode="numeric" onChange={(e) => setEditMap({ ...editMap, [person.id]: { ...draft, mobile: e.target.value } })} />
-                </div>
-                <input value={draft.pin} inputMode="numeric" maxLength="6" onChange={(e) => setEditMap({ ...editMap, [person.id]: { ...draft, pin: e.target.value } })} />
+            <SettingsItemCard key={person.id} title={person.name || "Staff"} subtitle={person.mobile || "No mobile"} status={person.is_active === false ? "Inactive" : "Active"} icon={title === "Technician" ? "🔧" : "☎️"}>
+              <div className="settings-sheet-grid two">
+                <label><span>Name</span><input value={draft.name} onChange={(e) => setEditMap({ ...editMap, [person.id]: { ...draft, name: e.target.value } })} /></label>
+                <label><span>Mobile</span><input value={draft.mobile} inputMode="numeric" onChange={(e) => setEditMap({ ...editMap, [person.id]: { ...draft, mobile: e.target.value } })} /></label>
+                <label><span>PIN</span><input value={draft.pin} inputMode="numeric" maxLength="6" onChange={(e) => setEditMap({ ...editMap, [person.id]: { ...draft, pin: e.target.value } })} /></label>
               </div>
               <div className="row-actions">
                 <button className="primary-btn small" onClick={() => onSave(person)}>Save</button>
-                <span className={person.is_active === false ? "status unassigned" : "status assigned"}>{person.is_active === false ? "Inactive" : "Active"}</span>
                 <button className="danger-btn small" onClick={() => onDelete(person)}>{person.is_active === false ? "Activate" : "Deactivate"}</button>
               </div>
-            </div>
+            </SettingsItemCard>
           );
         })}
       </Accordion>

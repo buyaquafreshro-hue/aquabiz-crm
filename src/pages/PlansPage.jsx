@@ -1,18 +1,37 @@
 import { useState } from "react";
 import { emptyPlan, emptyProduct } from "../constants/defaults";
-import { FormCard } from "../components/shared";
+import { FormCard, StatCard } from "../components/shared";
 import { supabase } from "../supabaseClient";
 import { arrIncludes, formatINR } from "../utils/appUtils";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 
-function Accordion({ title, count, defaultOpen = false, children }) {
+function Accordion({ title, count, icon, defaultOpen = false, children }) {
   return (
     <details className="settings-accordion" defaultOpen={defaultOpen}>
       <summary>
-        <span>{title}</span>
-        {typeof count === "number" && <strong>{count}</strong>}
+        <span className="settings-tab-icon">{icon}</span>
+        <span className="settings-tab-title">{title}</span>
+        <span className="settings-tab-action">View</span>
+        <strong>{typeof count === "number" ? count : "+"}</strong>
       </summary>
       <div className="accordion-body">{children}</div>
+    </details>
+  );
+}
+
+function SettingsItemCard({ title, subtitle, status, icon, children }) {
+  return (
+    <details className="settings-item-card">
+      <summary>
+        <span className="settings-tab-icon">{icon}</span>
+        <div>
+          <strong>{title}</strong>
+          {subtitle && <p>{subtitle}</p>}
+        </div>
+        <span className="settings-tab-action">View</span>
+        {status && <span className="status assigned">{status}</span>}
+      </summary>
+      <div className="settings-item-body">{children}</div>
     </details>
   );
 }
@@ -108,9 +127,9 @@ export function PlansPage({ categories, inventory, amcPlans, products, onUpdated
     await onUpdated();
   }
 
-  async function updatePlan(row) {
+  async function updatePlan(row, draftOverride) {
     setMessage("");
-    const draft = planEdit[row.id] || normalizePlan(row);
+    const draft = draftOverride || planEdit.data;
     if (!draft.name.trim()) return setMessage("Plan name is required.");
     const { data, error } = await supabase.from("amc_plans").update(planPayload(draft)).eq("id", row.id).select("id");
     if (error) return setMessage(error.message);
@@ -139,9 +158,9 @@ export function PlansPage({ categories, inventory, amcPlans, products, onUpdated
     await onUpdated();
   }
 
-  async function updateProduct(row) {
+  async function updateProduct(row, draftOverride) {
     setMessage("");
-    const draft = productEdit[row.id] || normalizeProduct(row);
+    const draft = draftOverride || productEdit.data;
     if (!draft.name.trim()) return setMessage("Product name is required.");
     const { data, error } = await supabase.from("ro_products").update(productPayload(draft)).eq("id", row.id).select("id");
     if (error) return setMessage(error.message);
@@ -170,140 +189,229 @@ export function PlansPage({ categories, inventory, amcPlans, products, onUpdated
       </section>
 
       <section className="amount-grid plans-summary-grid">
-        <div className="amount-box">
-          <span>AMC Plans</span>
-          <strong>{amcPlans.length}</strong>
-        </div>
-        <div className="amount-box">
-          <span>RO Products</span>
-          <strong>{products.length}</strong>
-        </div>
-        <div className="amount-box">
-          <span>Inventory Parts</span>
-          <strong>{inventory.length}</strong>
-        </div>
-        <div className="amount-box">
-          <span>Categories</span>
-          <strong>{categories.length}</strong>
-        </div>
+        <StatCard icon="🛡️" label="AMC Plans" value={amcPlans.length} onClick={() => document.getElementById("amc-plans-section")?.scrollIntoView({ behavior: "smooth", block: "start" })} />
+        <StatCard icon="🧰" label="RO Products" value={products.length} onClick={() => document.getElementById("ro-products-section")?.scrollIntoView({ behavior: "smooth", block: "start" })} />
+        <StatCard icon="🔩" label="Inventory Parts" value={inventory.length} onClick={() => window.scrollBy({ top: 400, behavior: "smooth" })} />
+        <StatCard icon="📂" label="Categories" value={categories.length} onClick={() => window.scrollBy({ top: 400, behavior: "smooth" })} />
       </section>
 
       {message && <div className={successMessage ? "success-box" : "error-box"}>{message}</div>}
       {message && <div className={successMessage ? "settings-toast success" : "settings-toast error"}>{message}</div>}
 
-      <section className="panel plans-panel">
+      <section className="panel plans-panel" id="amc-plans-section">
         <h3>AMC Plans</h3>
-        <Accordion title="Saved AMC Plans" count={amcPlans.length} defaultOpen>
-          {amcPlans.length === 0 ? <p className="muted">No AMC plans added.</p> : amcPlans.map((row) => {
-            const draft = planEdit[row.id] || normalizePlan(row);
-            return (
-              <EditablePlan
-                key={row.id}
-                data={draft}
-                setData={(next) => setPlanEdit({ ...planEdit, [row.id]: next })}
-                categories={categories}
-                inventory={inventory}
-                toggleArray={toggleArray}
-                type="amc"
-                onSave={() => updatePlan(row)}
-                onDelete={() => deletePlan(row)}
-              />
-            );
-          })}
+        <Accordion title="Saved AMC Plans" count={amcPlans.length} icon="🛡️">
+          {amcPlans.length === 0 ? <p className="muted">No AMC plans added.</p> : (
+            <div className="settings-card-list">
+              {amcPlans.map((row) => (
+                <SettingsItemCard
+                  key={row.id}
+                  title={row.name}
+                  subtitle={`${formatINR(row.price)} | Free visits: ${row.free_visits_enabled ? row.free_visits : "No"} | Coverage: ${row.coverage_type}`}
+                  status={`${row.validity_days} Days`}
+                  icon="🛡️"
+                >
+                  {(() => {
+                    const draft = planEdit.id === row.id ? planEdit.data : normalizePlan(row);
+                    return (
+                      <>
+                        <PlanFields data={draft} setData={(next) => setPlanEdit({ id: row.id, data: next })} categories={categories} inventory={inventory} toggleArray={toggleArray} type="amc" />
+                        <div className="row-actions mt-sm">
+                          <button className="primary-btn small" onClick={() => updatePlan(row, draft)}>Save</button>
+                          <button className="danger-btn small" onClick={() => deletePlan(row)}>Delete</button>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </SettingsItemCard>
+              ))}
+            </div>
+          )}
         </Accordion>
-        <Accordion title="Add New AMC Plan">
-          <PlanFields data={plan} setData={setPlan} categories={categories} inventory={inventory} toggleArray={toggleArray} type="amc" />
-          <button className="primary-btn big" onClick={savePlan}>Save AMC Plan</button>
+        <Accordion title="Add New AMC Plan" icon="➕">
+          <div className="plan-form-card">
+            <PlanFields data={plan} setData={setPlan} categories={categories} inventory={inventory} toggleArray={toggleArray} type="amc" />
+            <button className="primary-btn big" onClick={savePlan}>Save AMC Plan</button>
+          </div>
         </Accordion>
       </section>
 
-      <section className="panel plans-panel">
+      <section className="panel plans-panel" id="ro-products-section">
         <h3>RO Products</h3>
-        <Accordion title="Saved RO Products" count={products.length} defaultOpen>
-          {products.length === 0 ? <p className="muted">No RO products added.</p> : products.map((row) => {
-            const draft = productEdit[row.id] || normalizeProduct(row);
-            return (
-              <EditablePlan
-                key={row.id}
-                data={draft}
-                setData={(next) => setProductEdit({ ...productEdit, [row.id]: next })}
-                categories={categories}
-                inventory={inventory}
-                toggleArray={toggleArray}
-                type="product"
-                onSave={() => updateProduct(row)}
-                onDelete={() => deleteProduct(row)}
-              />
-            );
-          })}
+        <Accordion title="Saved RO Products" count={products.length} icon="🧰">
+          {products.length === 0 ? <p className="muted">No RO products added.</p> : (
+            <div className="settings-card-list">
+              {products.map((row) => (
+                <SettingsItemCard
+                  key={row.id}
+                  title={row.name}
+                  subtitle={`${formatINR(row.price)} | Min DP: ${formatINR(row.min_down_payment)} | Coverage: ${row.coverage_type}`}
+                  status={`${row.warranty_validity_days} Days`}
+                  icon="🧰"
+                >
+                  {(() => {
+                    const draft = productEdit.id === row.id ? productEdit.data : normalizeProduct(row);
+                    return (
+                      <>
+                        <PlanFields data={draft} setData={(next) => setProductEdit({ id: row.id, data: next })} categories={categories} inventory={inventory} toggleArray={toggleArray} type="product" />
+                        <div className="row-actions mt-sm">
+                          <button className="primary-btn small" onClick={() => updateProduct(row, draft)}>Save</button>
+                          <button className="danger-btn small" onClick={() => deleteProduct(row)}>Delete</button>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </SettingsItemCard>
+              ))}
+            </div>
+          )}
         </Accordion>
-        <Accordion title="Add New RO Product">
-          <PlanFields data={product} setData={setProduct} categories={categories} inventory={inventory} toggleArray={toggleArray} type="product" />
-          <button className="primary-btn big" onClick={saveProduct}>Save RO Product</button>
+        <Accordion title="Add New RO Product" icon="➕">
+          <div className="plan-form-card">
+            <PlanFields data={product} setData={setProduct} categories={categories} inventory={inventory} toggleArray={toggleArray} type="product" />
+            <button className="primary-btn big" onClick={saveProduct}>Save RO Product</button>
+          </div>
         </Accordion>
       </section>
     </>
   );
 }
 
-function EditablePlan({ data, setData, categories, inventory, toggleArray, type, onSave, onDelete }) {
+
+function PlanFields({ data, setData, categories, inventory, toggleArray, type }) {
   return (
-    <div className="edit-card">
-      <div className="edit-card-head">
-        <div>
-          <strong>{data.name || (type === "amc" ? "AMC Plan" : "RO Product")}</strong>
-          <p>{formatINR(data.price)} {type === "product" ? `| Min DP ${formatINR(data.min_down_payment)}` : ""}</p>
-        </div>
-        <div className="row-actions">
-          <button className="primary-btn small" onClick={onSave}>Save</button>
-          <button className="danger-btn small" onClick={onDelete}>Delete</button>
-        </div>
+    <div className="form-stack plan-sheet-form">
+      <div className="settings-sheet-grid two">
+        <label>
+          <span>{type === "amc" ? "Plan Name" : "RO Machine Name"}</span>
+          <input value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} />
+        </label>
+        <label>
+          <span>Price</span>
+          <input type="number" value={data.price} onChange={(e) => setData({ ...data, price: e.target.value })} />
+        </label>
+        <label>
+          <span>{type === "amc" ? "Validity Days" : "Warranty Days"}</span>
+          <input type="number" value={type === "amc" ? data.validity_days : data.warranty_validity_days} onChange={(e) => type === "amc" ? setData({ ...data, validity_days: e.target.value }) : setData({ ...data, warranty_validity_days: e.target.value })} />
+        </label>
+        {type === "product" && (
+          <label>
+            <span>Minimum Down Payment</span>
+            <input type="number" value={data.min_down_payment} onChange={(e) => setData({ ...data, min_down_payment: e.target.value })} />
+          </label>
+        )}
+        <label>
+          <span>Free Visits</span>
+          <select value={data.free_visits_enabled ? "yes" : "no"} onChange={(e) => setData({ ...data, free_visits_enabled: e.target.value === "yes", free_visits: e.target.value === "yes" ? data.free_visits : "0" })}>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </label>
+        {data.free_visits_enabled && (
+          <label>
+            <span>No. of Free Visits</span>
+            <input type="number" value={data.free_visits} onChange={(e) => setData({ ...data, free_visits: e.target.value })} />
+          </label>
+        )}
+        <label>
+          <span>Reminder Days</span>
+          <input type="number" value={data.service_reminder_days} onChange={(e) => setData({ ...data, service_reminder_days: e.target.value })} />
+        </label>
+        <label>
+          <span>Coverage Type</span>
+          <select value={data.coverage_type} onChange={(e) => setData({ ...data, coverage_type: e.target.value })}>
+            <option value="none">No Parts</option>
+            <option value="electric">Electric Pump+SMPS</option>
+            <option value="selected">Selected Parts/Categories</option>
+            <option value="all">All Parts</option>
+          </select>
+        </label>
+        <label className="settings-field-wide">
+          <span>Terms / Notes</span>
+          <input value={data.notes} onChange={(e) => setData({ ...data, notes: e.target.value })} />
+        </label>
       </div>
-      <PlanFields data={data} setData={setData} categories={categories} inventory={inventory} toggleArray={toggleArray} type={type} compact />
+      {data.coverage_type === "selected" && (
+        <>
+          <FormCard label="Covered Categories">
+            <CoveredItemsSelector 
+              items={categories} 
+              selectedIds={data.covered_category_ids} 
+              onToggle={(id) => toggleArray(data, setData, "covered_category_ids", id)} 
+              searchPlaceholder="Search categories..."
+            />
+          </FormCard>
+          <FormCard label="Covered Parts">
+            <CoveredItemsSelector 
+              items={inventory} 
+              selectedIds={data.covered_part_ids} 
+              onToggle={(id) => toggleArray(data, setData, "covered_part_ids", id)} 
+              searchPlaceholder="Search parts..."
+            />
+          </FormCard>
+        </>
+      )}
     </div>
   );
 }
 
-function PlanFields({ data, setData, categories, inventory, toggleArray, type }) {
+function CoveredItemsSelector({ items, selectedIds, onToggle, searchPlaceholder }) {
+  const [search, setSearch] = useState("");
+  const filtered = items.filter(item => String(item.name || "").toLowerCase().includes(search.toLowerCase()));
+  
   return (
-    <div className="form-stack">
-      <input placeholder={type === "amc" ? "Plan Name" : "RO Machine Name"} value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} />
-      <div className="two-col">
-        <input placeholder="Price" type="number" value={data.price} onChange={(e) => setData({ ...data, price: e.target.value })} />
-        <input placeholder="Validity days" type="number" value={type === "amc" ? data.validity_days : data.warranty_validity_days} onChange={(e) => type === "amc" ? setData({ ...data, validity_days: e.target.value }) : setData({ ...data, warranty_validity_days: e.target.value })} />
+    <div className="covered-items-container">
+      <div className="covered-items-search">
+        <input 
+          placeholder={searchPlaceholder || "Search..."} 
+          value={search} 
+          onChange={e => setSearch(e.target.value)} 
+        />
       </div>
-      {type === "product" && (
-        <FormCard label="Minimum Down Payment for EMI">
-          <input placeholder="Example: 1999" type="number" value={data.min_down_payment} onChange={(e) => setData({ ...data, min_down_payment: e.target.value })} />
-        </FormCard>
-      )}
-      <FormCard label="Free Service Visits">
-        <div className="chip-grid">
-          <button className={data.free_visits_enabled ? "chip active" : "chip"} type="button" onClick={() => setData({ ...data, free_visits_enabled: true })}>Yes</button>
-          <button className={!data.free_visits_enabled ? "chip active" : "chip"} type="button" onClick={() => setData({ ...data, free_visits_enabled: false, free_visits: "0" })}>No</button>
-        </div>
-        {data.free_visits_enabled && <input placeholder="No. of free visits" type="number" value={data.free_visits} onChange={(e) => setData({ ...data, free_visits: e.target.value })} />}
-      </FormCard>
-      <FormCard label="Service Reminder Interval Days">
-        <input placeholder="Example: 90 means reminder after every 90 days" type="number" value={data.service_reminder_days} onChange={(e) => setData({ ...data, service_reminder_days: e.target.value })} />
-        <p className="helper">Service reminders will appear on the admin dashboard based on this interval.</p>
-      </FormCard>
-      <FormCard label="Coverage Type">
-        <div className="chip-grid">
-          {[["none", "No Parts"], ["electric", "Electric Pump+SMPS"], ["selected", "Selected Parts/Categories"], ["all", "All Parts"]].map(([value, label]) => <button className={data.coverage_type === value ? "chip active" : "chip"} type="button" key={value} onClick={() => setData({ ...data, coverage_type: value })}>{label}</button>)}
-        </div>
-      </FormCard>
-      {data.coverage_type === "selected" && (
-        <>
-          <FormCard label="Covered Categories">
-            <div className="check-grid">{categories.map((c) => <label className="check-row" key={c.id}><input type="checkbox" checked={arrIncludes(data.covered_category_ids, c.id)} onChange={() => toggleArray(data, setData, "covered_category_ids", c.id)} /> {c.name}</label>)}</div>
-          </FormCard>
-          <FormCard label="Covered Parts">
-            <div className="check-grid">{inventory.map((p) => <label className="check-row" key={p.id}><input type="checkbox" checked={arrIncludes(data.covered_part_ids, p.id)} onChange={() => toggleArray(data, setData, "covered_part_ids", p.id)} /> {p.name}</label>)}</div>
-          </FormCard>
-        </>
-      )}
-      <input placeholder="Terms / Notes" value={data.notes} onChange={(e) => setData({ ...data, notes: e.target.value })} />
+      <div className="table-responsive excel-table-container covered-items-scroll">
+        <table className="excel-table" style={{ margin: 0, borderRadius: 0 }}>
+          <thead>
+            <tr>
+              <th style={{ width: "50px", textAlign: "center", position: "sticky", top: 0, zIndex: 10 }}>
+                <input 
+                  type="checkbox" 
+                  checked={filtered.length > 0 && filtered.every(item => arrIncludes(selectedIds, item.id))}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    filtered.forEach(item => {
+                      const isSelected = arrIncludes(selectedIds, item.id);
+                      if (checked && !isSelected) onToggle(item.id);
+                      if (!checked && isSelected) onToggle(item.id);
+                    });
+                  }}
+                />
+              </th>
+              <th style={{ position: "sticky", top: 0, zIndex: 10 }}>Name</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr><td colSpan="2" className="muted text-center" style={{ padding: "16px" }}>No items found.</td></tr>
+            ) : filtered.map((item) => {
+              const isSelected = arrIncludes(selectedIds, item.id);
+              return (
+                <tr key={item.id} className={isSelected ? "selected-row" : ""} style={isSelected ? { backgroundColor: "#f0fdf4" } : {}}>
+                  <td style={{ textAlign: "center" }}>
+                    <input 
+                      type="checkbox" 
+                      checked={isSelected} 
+                      onChange={() => onToggle(item.id)} 
+                    />
+                  </td>
+                  <td onClick={() => onToggle(item.id)} style={{ cursor: "pointer", fontWeight: isSelected ? "600" : "normal" }}>
+                    {item.name}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
