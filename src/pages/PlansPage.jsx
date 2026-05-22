@@ -6,8 +6,9 @@ import { arrIncludes, formatINR } from "../utils/appUtils";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 
 function Accordion({ title, count, icon, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <details className="settings-accordion" defaultOpen={defaultOpen}>
+    <details className="settings-accordion" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
         <span className="settings-tab-icon">{icon}</span>
         <span className="settings-tab-title">{title}</span>

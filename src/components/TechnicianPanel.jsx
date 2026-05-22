@@ -3,10 +3,11 @@ import { InvoiceBuilder } from "./InvoiceBuilder";
 import { BookingMini } from "./shared";
 import { PartsTable } from "./PartsTable";
 import { supabase } from "../supabaseClient";
-import { findServiceInvoiceForBooking, formatINR } from "../utils/appUtils";
+import { formatINR } from "../utils/appUtils";
 import { calculateTechnicianStats, isOpenJobStatus } from "../utils/roleDashboard";
 import { clearRoleSession, getRoleSession, saveRoleSession } from "../utils/roleSession";
 import { buildWhatsAppUrl, customerGreetingMessage } from "../utils/whatsappUtils";
+import { logCommunication } from "../services/communicationLogService";
 import { useAutoHideMessage } from "../utils/toastUtils";
 import { getText } from "../constants/text";
 
@@ -372,7 +373,7 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
           <div className="cards-grid">
             {filteredJobs.map((job) => {
               const booking = bookings.find((b) => String(b.id) === String(job.booking_id));
-              const hasInvoice = !!findServiceInvoiceForBooking(invoices, job.booking_id);
+              const hasInvoice = !!invoices.find((inv) => String(inv.booking_id || "") === String(job.booking_id || ""));
               const isOpen = String(openJobId) === String(job.id);
 
               return (
@@ -409,7 +410,15 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
                       </p>
 
                       <div className="row-actions mt-sm">
-                        <a className="ghost-btn small" href={`tel:${booking?.mobile || ""}`}>
+                        <a className="ghost-btn small" href={`tel:${booking?.mobile || ""}`} onClick={() => logCommunication({
+                          action_type: 'call',
+                          customer_id: booking?.customer_id || null,
+                          booking_id: booking?.id || null,
+                          job_assignment_id: job.id,
+                          customer_name: booking?.customer_name,
+                          customer_mobile: booking?.mobile,
+                          source_screen: 'Technician Panel'
+                        })}>
                           {t.call}
                         </a>
 
@@ -418,6 +427,15 @@ export function TechnicianPanel({ jobs, bookings, services = [], technicians, te
                           href={buildWhatsAppUrl(booking?.mobile, customerGreetingMessage(booking?.customer_name, businessSettings?.business_name))}
                           target="_blank"
                           rel="noreferrer"
+                          onClick={() => logCommunication({
+                            action_type: 'whatsapp',
+                            customer_id: booking?.customer_id || null,
+                            booking_id: booking?.id || null,
+                            job_assignment_id: job.id,
+                            customer_name: booking?.customer_name,
+                            customer_mobile: booking?.mobile,
+                            source_screen: 'Technician Panel'
+                          })}
                         >
                           WhatsApp
                         </a>

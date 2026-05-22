@@ -164,7 +164,10 @@ export function getNoInvoiceReason(job, booking) {
 }
 
 export function getCompletedJobInvoiceState(job, invoices = [], booking) {
-  const invoice = findServiceInvoiceForBooking(invoices, job?.booking_id);
+  let invoice = findServiceInvoiceForBooking(invoices, job?.booking_id);
+  if (!invoice && job?.booking_id) {
+    invoice = invoices.find((inv) => String(inv.booking_id || "") === String(job.booking_id));
+  }
   const noInvoiceReason = getNoInvoiceReason(job, booking);
   const invoiceWaived = !!noInvoiceReason || job?.invoice_required === false || booking?.invoice_required === false;
   return {
@@ -188,7 +191,7 @@ export function getCompletedJobsCount(jobs = [], invoices = []) {
   });
 
   invoices.forEach((invoice) => {
-    if (isServiceInvoice(invoice)) {
+    if (invoice.booking_id) {
       completedBookingIds.add(String(invoice.booking_id));
     }
   });

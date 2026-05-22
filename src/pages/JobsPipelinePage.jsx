@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { InvoiceBuilder } from "../components/InvoiceBuilder";
 import { StatCard } from "../components/shared";
-import { addDays, findServiceInvoiceForBooking, getBookingPriority, getCompletedJobInvoiceState, formatISTDate, todayISO } from "../utils/appUtils";
+import { addDays, getBookingPriority, getCompletedJobInvoiceState, formatISTDate, todayISO } from "../utils/appUtils";
 import { saveJobAssignment, reassignTechnician } from "../services/jobAssignments";
 import { upsertCustomerFromBooking } from "../services/customerService";
 import { supabase } from "../supabaseClient";
 import { buildWhatsAppUrl, closeOtpMessage } from "../utils/whatsappUtils";
 import { getText } from "../constants/text";
+import { logCommunication } from "../services/communicationLogService";
 
 const NO_INVOICE_REASONS = ["No Charge", "Cancelled after visit", "Already paid", "Follow-up job"];
 
@@ -88,10 +89,17 @@ export function JobsPipelinePage({ bookings, jobs, technicians, telecallers = []
   }, [jobs, bookings]);
 
   const filterCounts = useMemo(() => {
-    const rows = bookings.map((booking) => ({
-      booking,
-      job: jobs.find((row) => String(row.booking_id) === String(booking.id)),
-    }));
+    const todayStr = todayISO();
+    const rows = bookings
+      .map((booking) => ({
+        booking,
+        job: jobs.find((row) => String(row.booking_id) === String(booking.id)),
+      }))
+      .filter(({ booking }) => {
+        if (scheduledDateFilter || search.trim()) return true;
+        if (booking.booking_date && booking.booking_date > todayStr) return false;
+        return true;
+      });
     return {
       all: rows.length,
       pending: rows.filter(({ job }) => !job || !isClosedJobStatus(job.status)).length,
@@ -101,7 +109,7 @@ export function JobsPipelinePage({ bookings, jobs, technicians, telecallers = []
       cancelled: rows.filter(({ job }) => job && ["cancelled", "canceled"].includes(String(job.status).toLowerCase())).length,
       repeat: rows.filter(({ booking }) => repeatBookings.has(String(booking.id))).length,
     };
-  }, [bookings, jobs, repeatBookings]);
+  }, [bookings, jobs, repeatBookings, scheduledDateFilter, search]);
 
   const serviceTypeCards = useMemo(() => {
     const tomorrow = addDays(todayISO(), 1);
@@ -134,12 +142,8 @@ export function JobsPipelinePage({ bookings, jobs, technicians, telecallers = []
       if (q) {
         const txt = `${booking.customer_name} ${booking.mobile} ${booking.service_type}`.toLowerCase();
         if (!txt.includes(q)) return false;
-      } else if (booking.booking_date) {
-        const today = new Date();
-        const yyyy = today.getFullYear();
-        const mm = String(today.getMonth() + 1).padStart(2, '0');
-        const dd = String(today.getDate()).padStart(2, '0');
-        const todayDateStr = `${yyyy}-${mm}-${dd}`;
+      } else if (booking.booking_date && !scheduledDateFilter) {
+        const todayDateStr = todayISO();
         if (booking.booking_date > todayDateStr) return false;
       }
       
@@ -457,7 +461,7 @@ export function JobsPipelinePage({ bookings, jobs, technicians, telecallers = []
               ) : paginatedJobs.map(({ booking, job }) => {
                  const tech = job ? technicians.find(t => String(t.id) === String(job.technician_id)) : null;
                  const priority = getBookingPriority(booking);
-                 const invoice = findServiceInvoiceForBooking(invoices, booking.id);
+                 const invoice = invoices.find((inv) => String(inv.booking_id || "") === String(booking.id || ""));
                  const hasInvoice = !!invoice;
                  const invoiceState = job ? getCompletedJobInvoiceState(job, invoices, booking) : { hasInvoice, isInvoicePending: false, badge: "" };
                  const isRepeat = repeatBookings.has(String(booking.id));
@@ -501,6 +505,22 @@ export function JobsPipelinePage({ bookings, jobs, technicians, telecallers = []
                        {isRepeat && <span className="status unassigned ml-sm" style={{fontSize: '10px', padding: '2px 6px', marginLeft: '8px'}}>{t.repeat}</span>}
                        <br/><span className="muted" style={{fontSize: '12px'}}>{booking.mobile}{booking.alternate_mobile ? ` / ${booking.alternate_mobile}` : ""}</span>
                        {booking.area && <div className="muted" style={{fontSize: '11px', marginTop: '4px'}}><strong>Area:</strong> {booking.area}</div>}
+                       <div className="row-actions" style={{marginTop: '6px', gap: '4px'}}>
+                         <a className="ghost-btn small" style={{fontSize: '11px', padding: '2px 6px'}} href={`tel:${booking.mobile}`} onClick={() => logCommunication({
+                           action_type: 'call',
+                           booking_id: booking.id,
+                           customer_name: booking.customer_name,
+                           customer_mobile: booking.mobile,
+                           source_screen: 'Jobs Pipeline'
+                         })}>📞</a>
+                         <a className="ghost-btn small" style={{fontSize: '11px', padding: '2px 6px'}} href={buildWhatsAppUrl(booking.mobile, `Hello ${booking.customer_name || ''}`)} target="_blank" rel="noreferrer" onClick={() => logCommunication({
+                           action_type: 'whatsapp',
+                           booking_id: booking.id,
+                           customer_name: booking.customer_name,
+                           customer_mobile: booking.mobile,
+                           source_screen: 'Jobs Pipeline'
+                         })}>💬</a>
+                       </div>
                      </td>
                      <td style={{fontSize: '12px', color: 'var(--muted)'}}>{dateStr}</td>
                      <td style={{fontSize: '12px', color: 'var(--primary)', fontWeight: '600'}}>
@@ -586,7 +606,15 @@ export function JobsPipelinePage({ bookings, jobs, technicians, telecallers = []
                            
                             {job && !isClosed && (
                               <>
-                                <a className="ghost-btn small" href={buildWhatsAppUrl(booking.mobile, closeOtpMessage(booking, businessSettings))} target="_blank" rel="noreferrer">{t.sendOtp}</a>
+                                 <a className="ghost-btn small" href={buildWhatsAppUrl(booking.mobile, closeOtpMessage(booking, businessSettings))} target="_blank" rel="noreferrer" onClick={() => logCommunication({
+                                   action_type: 'whatsapp',
+                                   booking_id: booking.id,
+                                   job_assignment_id: job.id,
+                                   customer_name: booking.customer_name,
+                                   customer_mobile: booking.mobile,
+                                   source_screen: 'Jobs Pipeline',
+                                   notes: 'OTP Send'
+                                 })}>{t.sendOtp}</a>
                                 <button className="ghost-btn small" style={{color: "var(--success-color, #10b981)", borderColor: "var(--success-color, #10b981)"}} onClick={() => { setDirectCloseData({ booking, job }); setCloseJobParts([]); setCloseJobReason(""); }}>{language === "hi" ? "बंद करें" : "Close"}</button>
                                 <button className="danger-btn small" onClick={() => updateStatus(job, "Cancelled")}>{language === "hi" ? "रद्द करें" : "Cancel"}</button>
                                 <button className="ghost-btn small" onClick={() => {

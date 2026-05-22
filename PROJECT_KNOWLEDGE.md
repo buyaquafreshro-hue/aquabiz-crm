@@ -500,6 +500,27 @@ App supports: English, Hindi, Hinglish.
 - Issues found: None
 - Next steps: Developer to refer to this document for future tasks.
 
+### 2026-05-22 – Communication Click Tracking & Authorized Signature uploads
+- Summary:
+  1. Authorized Invoice Signatures: Added signature image upload capabilities in Business Settings (persisted to Supabase storage) and updated the print and PDF templates to show the authorized signature.
+  2. Communication Logs Table: Created a `communication_logs` table in Supabase to track click interactions (`call` and `whatsapp`).
+  3. Centralized tracking service: Built `src/services/communicationLogService.js` to log call/WA interactions without blocking user actions.
+  4. UI instrumentation: Wrapped Call and WhatsApp actions in Dashboard reminders, Jobs Pipeline customer details and OTP sending, Leads list, Customer history, Sales panel, and Technician Panel.
+  5. Communication Report Dashboard: Added a "Communication Logs" page in settings to view tracked attempts, filterable by date range, role, actor, action, and mobile number, with key metrics.
+- Files changed: `src/pages/BusinessSettingsPage.jsx`, `src/pages/InvoicesPage.jsx`, `src/pages/Dashboard.jsx`, `src/pages/JobsPipelinePage.jsx`, `src/pages/LeadsPage.jsx`, `src/pages/CustomerHistoryPage.jsx`, `src/components/TechnicianPanel.jsx`, `src/pages/SalesLogin.jsx`, `src/pages/SettingsPage.jsx`, `src/App.jsx`, `src/pages/CommunicationReportPage.jsx`
+- Supabase changes: `supabase-aquabiz-invoice-warranty-terms.sql` and `supabase-aquabiz-communication-logs.sql`
+
+### 2026-05-23 – CRM Stabilization and UI Optimizations
+- Summary:
+  1. Fixed React HTML validation warnings for `defaultOpen` prop on `<details>` by implementing state-controlled `open` attributes.
+  2. Integrated Call and WhatsApp tracking into "Send OTP" actions.
+  3. Added inline Call and WhatsApp action shortcuts to the customer column of the Jobs Pipeline.
+  4. Improved dashboard reminders UX to display all reminders using a dynamic "View All" redirection.
+  5. Cleaned up unused React and dependency imports to keep bundle footprint optimized.
+  6. Standardized date/time representation inside Invoice detail drawers to display date-only in IST.
+- Files changed: `src/pages/PayrollPage.jsx`, `src/pages/SettingsPage.jsx`, `src/pages/PlansPage.jsx`, `src/pages/ExpensesPage.jsx`, `src/pages/InventoryPage.jsx`, `src/pages/CommunicationReportPage.jsx`, `src/pages/Dashboard.jsx`, `src/pages/JobsPipelinePage.jsx`, `src/pages/InvoicesPage.jsx`
+- Supabase changes: None
+
 ## 14. Agent Working Rules
 Before every task:
 1. Read this file.

@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { InvoiceBuilder } from "../components/InvoiceBuilder";
 import { StatCard } from "../components/shared";
 import { getText } from "../constants/text";
 import { formatINR, getCompletedJobInvoiceState, isActive, todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl, reminderMessage } from "../utils/whatsappUtils";
+import { logCommunication } from "../services/communicationLogService";
 export function Dashboard({ stats, services = [], bookings, jobs, technicians, telecallers = [], technicianParts = [], inventory, coverages, invoices, amcPlans, products, salesPersons = [], businessSettings, leads = [], dataErrors = [], onUpdated, setPage, setReportFilter, language }) {
   const [invoiceJobId, setInvoiceJobId] = useState(null);
   const [invoiceBookingId, setInvoiceBookingId] = useState(null);
@@ -15,7 +16,7 @@ export function Dashboard({ stats, services = [], bookings, jobs, technicians, t
   const emiReminders = bookings
     .filter((b) => b.payment_option === "emi" && b.emi_next_due_date && String(b.emi_next_due_date) <= todayISO())
     .map((b) => ({ id: `emi-${b.id}`, customer_name: b.customer_name, mobile: b.mobile, reminder_type: "EMI", due_date: b.emi_next_due_date }));
-  const reminders = [...coverageReminders, ...emiReminders].slice(0, 5);
+  const reminders = [...coverageReminders, ...emiReminders];
   const t = getText(language);
 
   function openReport(filter) {
@@ -164,18 +165,55 @@ export function Dashboard({ stats, services = [], bookings, jobs, technicians, t
               <p>{t.remindersEmpty}</p>
             </div>
           ) : (
-            reminders.map((r) => (
+            reminders.slice(0, 5).map((r) => (
               <div className="premium-list-row" key={r.id}>
                 <div>
                   <strong>{r.customer_name}</strong>
                   <p>{r.mobile} • {r.reminder_type} Due: {r.due_date}</p>
                 </div>
                 <div className="row-actions">
-                  <a className="ghost-btn small" href={`tel:${r.mobile}`}>{t.call}</a>
-                  <a className="ghost-btn small" href={buildWhatsAppUrl(r.mobile, reminderMessage({ ...r, label: r.reminder_type }, businessSettings))} target="_blank" rel="noreferrer">WA</a>
+                  <a 
+                    className="ghost-btn small" 
+                    href={`tel:${r.mobile}`}
+                    onClick={() => logCommunication({
+                      action_type: "call",
+                      customer_id: r.customer_id || null,
+                      booking_id: r.booking_id || (String(r.id).startsWith("emi-") ? String(r.id).replace("emi-", "") : null),
+                      customer_name: r.customer_name,
+                      customer_mobile: r.mobile,
+                      source_screen: "Dashboard Reminders",
+                      notes: `Reminder Type: ${r.reminder_type}`
+                    })}
+                  >
+                    {t.call}
+                  </a>
+                  <a 
+                    className="ghost-btn small" 
+                    href={buildWhatsAppUrl(r.mobile, reminderMessage({ ...r, label: r.reminder_type }, businessSettings))} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    onClick={() => logCommunication({
+                      action_type: "whatsapp",
+                      customer_id: r.customer_id || null,
+                      booking_id: r.booking_id || (String(r.id).startsWith("emi-") ? String(r.id).replace("emi-", "") : null),
+                      customer_name: r.customer_name,
+                      customer_mobile: r.mobile,
+                      source_screen: "Dashboard Reminders",
+                      notes: `Reminder Type: ${r.reminder_type}`
+                    })}
+                  >
+                    WA
+                  </a>
                 </div>
               </div>
             ))
+          )}
+          {reminders.length > 5 && (
+            <div style={{ textAlign: "center", marginTop: "12px" }}>
+              <button className="ghost-btn small" onClick={() => setPage("reminders")}>
+                View All {reminders.length} Reminders →
+              </button>
+            </div>
           )}
         </section>
       </section>

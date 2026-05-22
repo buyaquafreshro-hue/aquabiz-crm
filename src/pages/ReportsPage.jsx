@@ -82,7 +82,7 @@ export function ReportsPage({ invoices, invoiceItems, usage, jobs = [], technici
   const dueReminders = coverages.filter((c) => c.next_service_due_date && String(c.next_service_due_date) <= todayISO() && isActive(c));
   const completedJobIds = new Set(
     invoices
-      .filter((invoice) => invoice.booking_id && !["amc", "new_sale"].includes(invoice.invoice_type))
+      .filter((invoice) => invoice.booking_id)
       .map((invoice) => String(invoice.booking_id))
   );
   const completedJobs = activeJobs.filter((j) => isCompletedStatus(j.status) || completedJobIds.has(String(j.booking_id)));

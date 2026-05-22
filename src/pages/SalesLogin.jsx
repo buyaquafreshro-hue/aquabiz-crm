@@ -5,6 +5,7 @@ import { clearRoleSession, getRoleSession, saveRoleSession } from "../utils/role
 import { calculateSalesStats } from "../utils/salesUtils";
 import { useAutoHideMessage } from "../utils/toastUtils";
 import { buildWhatsAppUrl, customerGreetingMessage } from "../utils/whatsappUtils";
+import { logCommunication } from "../services/communicationLogService";
 
 const SALES_SESSION_KEY = "aquabiz_sales_person";
 
@@ -167,8 +168,20 @@ export function SalesLogin({ salesPersons = [], leads = [], invoices = [], onUpd
             </div>
             <div className="row-actions mt-sm">
               <button className="primary-btn small" onClick={() => saveLeadFollowup(lead)}>Save Follow-up</button>
-              <a className="ghost-btn small" href={`tel:${lead.mobile}`}>Call</a>
-              <a className="ghost-btn small" href={buildWhatsAppUrl(lead.mobile, customerGreetingMessage(lead.customer_name))} target="_blank" rel="noreferrer">WA</a>
+              <a className="ghost-btn small" href={`tel:${lead.mobile}`} onClick={() => logCommunication({
+                action_type: 'call',
+                lead_id: lead.id,
+                customer_name: lead.customer_name,
+                customer_mobile: lead.mobile,
+                source_screen: 'Sales Panel'
+              })}>Call</a>
+              <a className="ghost-btn small" href={buildWhatsAppUrl(lead.mobile, customerGreetingMessage(lead.customer_name))} target="_blank" rel="noreferrer" onClick={() => logCommunication({
+                action_type: 'whatsapp',
+                lead_id: lead.id,
+                customer_name: lead.customer_name,
+                customer_mobile: lead.mobile,
+                source_screen: 'Sales Panel'
+              })}>WA</a>
             </div>
           </div>
         ))}

@@ -6,6 +6,7 @@ import { coverageLabel, formatINR, getDueAmount, getPaidAmount, isActive, isComp
 import { downloadCsv, parseCustomerUploadFile } from "../utils/csvUtils";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 import { buildWhatsAppUrl, customerGreetingMessage, invoiceShareMessage } from "../utils/whatsappUtils";
+import { logCommunication } from "../services/communicationLogService";
 export function CustomerHistoryPage({ mode = "search", initialMobile = "", customers, bookings, jobs = [], technicians = [], invoices, invoiceItems, invoicePayments = [], usage = [], coverages, leads = [], businessSettings, onCustomerOpen, onBack, onCreateBooking, onUpdated }) {
   const [search, setSearch] = useState("");
   const [selectedMobile, setSelectedMobile] = useState(initialMobile || "");
@@ -556,6 +557,12 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
           <div class="box"><p><strong>Customer:</strong> ${invoice.customer_name || selectedCustomer?.name || ""}</p><p><strong>Mobile:</strong> ${invoice.mobile || selectedCustomer?.mobile || ""}</p><p><strong>Type:</strong> ${invoice.invoice_type || "service"}</p></div>
           <table><thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table>
           <table><tr><td>Total</td><td class="total">Rs ${Number(invoice.total_amount || 0).toLocaleString("en-IN")}</td></tr><tr><td>Paid</td><td>Rs ${Number(getPaidAmount(invoice) || 0).toLocaleString("en-IN")}</td></tr><tr><td>Pending</td><td>Rs ${Number(getDueAmount(invoice) || 0).toLocaleString("en-IN")}</td></tr><tr><td>Status</td><td>${invoice.payment_status || ""}</td></tr></table>
+          ${invoice.warranty_terms ? `
+            <div class="box" style="margin-top: 14px;">
+              <p><strong>Warranty & Coverage Terms:</strong></p>
+              <p style="white-space: pre-wrap; font-size: 13px; color: #4b5563;">${invoice.warranty_terms}</p>
+            </div>
+          ` : ""}
           <div class="box"><p>${business.terms || "Thank you for your business."}</p></div>
         </div><script>window.onload=function(){window.print()}</script>
       </body></html>`;
@@ -730,8 +737,20 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
                   <p>{c.address || "Address not added"}</p>
                 </div>
                 <div className="customer-card-actions">
-                  <a className="ghost-btn" href={`tel:${c.mobile}`}>Call</a>
-                  <a className="ghost-btn" href={buildWhatsAppUrl(c.mobile, customerGreetingMessage(c.name, businessSettings?.business_name))} target="_blank" rel="noreferrer">WhatsApp</a>
+                  <a className="ghost-btn" href={`tel:${c.mobile}`} onClick={() => logCommunication({
+                    action_type: 'call',
+                    customer_id: c.id,
+                    customer_name: c.name,
+                    customer_mobile: c.mobile,
+                    source_screen: 'Customer List'
+                  })}>Call</a>
+                  <a className="ghost-btn" href={buildWhatsAppUrl(c.mobile, customerGreetingMessage(c.name, businessSettings?.business_name))} target="_blank" rel="noreferrer" onClick={() => logCommunication({
+                    action_type: 'whatsapp',
+                    customer_id: c.id,
+                    customer_name: c.name,
+                    customer_mobile: c.mobile,
+                    source_screen: 'Customer List'
+                  })}>WhatsApp</a>
                   <button className="primary-btn" onClick={() => onCreateBooking?.(c)} type="button">New Booking</button>
                 </div>
               </article>
@@ -775,8 +794,20 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
                 }}>Edit Profile</button>
                 <button className="ghost-btn small" onClick={() => window.print()}>Print History</button>
                 <button className="primary-btn small" onClick={() => onCreateBooking?.(selectedCustomer)}>New Booking / Ticket</button>
-                <a className="ghost-btn small" href={`tel:${selectedCustomer.mobile}`}>Call</a>
-                <a className="ghost-btn small" href={customerWhatsAppLink()} target="_blank" rel="noreferrer">WhatsApp</a>
+                <a className="ghost-btn small" href={`tel:${selectedCustomer.mobile}`} onClick={() => logCommunication({
+                  action_type: 'call',
+                  customer_id: selectedCustomer.id,
+                  customer_name: selectedCustomer.name,
+                  customer_mobile: selectedCustomer.mobile,
+                  source_screen: 'Customer History'
+                })}>Call</a>
+                <a className="ghost-btn small" href={customerWhatsAppLink()} target="_blank" rel="noreferrer" onClick={() => logCommunication({
+                  action_type: 'whatsapp',
+                  customer_id: selectedCustomer.id,
+                  customer_name: selectedCustomer.name,
+                  customer_mobile: selectedCustomer.mobile,
+                  source_screen: 'Customer History'
+                })}>WhatsApp</a>
               </div>
             </div>
             <div className="payment-summary">
@@ -817,6 +848,11 @@ export function CustomerHistoryPage({ mode = "search", initialMobile = "", custo
                 <p>Activation: {c.activation_date} | Expiry: {c.expiry_date}</p>
                 <p>Visits: {c.used_visits}/{c.free_visits}</p>
                 <p>Next Service: {c.next_service_due_date}</p>
+                {c.notes && (
+                  <p className="mt-xs" style={{ fontSize: "13px", color: "#6b7280", whiteSpace: "pre-wrap", borderTop: "1px dashed #e5e7eb", paddingTop: "6px", marginTop: "6px" }}>
+                    <strong>Terms:</strong> {c.notes}
+                  </p>
+                )}
               </div>
             ))}
           </section>

@@ -5,6 +5,7 @@ import { supabase } from "../supabaseClient";
 import { todayISO } from "../utils/appUtils";
 import { buildWhatsAppUrl, customerGreetingMessage } from "../utils/whatsappUtils";
 import { useAutoHideMessage } from "../utils/toastUtils";
+import { logCommunication } from "../services/communicationLogService";
 export function LeadsPage({ leads, customers = [], telecallers = [], salesPersons = [], loggedInTelecaller = null, onUpdated, setPage, onCreateBooking }) {
   const [form, setForm] = useState({ ...emptyLead, address: "", area: "", service_need: "" });
   const [showLeadForm, setShowLeadForm] = useState(!loggedInTelecaller);
@@ -399,8 +400,20 @@ export function LeadsPage({ leads, customers = [], telecallers = [], salesPerson
                 <button className="ghost-btn small" key={status} onClick={() => updateLeadStatus(lead, status)}>{status}</button>
               ))}
               <button className="primary-btn small" onClick={() => onCreateBooking?.(lead)}>Create Booking</button>
-              <a className="ghost-btn small" href={`tel:${lead.mobile}`}>Call</a>
-              <a className="ghost-btn small" href={buildWhatsAppUrl(lead.mobile, customerGreetingMessage(lead.customer_name))} target="_blank" rel="noreferrer">WA</a>
+              <a className="ghost-btn small" href={`tel:${lead.mobile}`} onClick={() => logCommunication({
+                action_type: 'call',
+                lead_id: lead.id,
+                customer_name: lead.customer_name,
+                customer_mobile: lead.mobile,
+                source_screen: 'Leads Page'
+              })}>Call</a>
+              <a className="ghost-btn small" href={buildWhatsAppUrl(lead.mobile, customerGreetingMessage(lead.customer_name))} target="_blank" rel="noreferrer" onClick={() => logCommunication({
+                action_type: 'whatsapp',
+                lead_id: lead.id,
+                customer_name: lead.customer_name,
+                customer_mobile: lead.mobile,
+                source_screen: 'Leads Page'
+              })}>WA</a>
             </div>
               </>
             )}

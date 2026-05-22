@@ -4,8 +4,9 @@ import { formatINR, uniqueServices } from "../utils/appUtils";
 import { isSuccessToast, useAutoHideMessage } from "../utils/toastUtils";
 
 function Accordion({ title, count, icon, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <details className="settings-accordion" defaultOpen={defaultOpen}>
+    <details className="settings-accordion" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
         <span className="settings-tab-icon">{icon}</span>
         <span className="settings-tab-title">{title}</span>
@@ -509,6 +510,7 @@ export function SettingsPage({ services, serviceAreas = [], setPage, onUpdated }
           <button onClick={() => setPage("cashbook")}>Accounts / Cashbook</button>
           <button onClick={() => setPage("emi")}>EMI Management</button>
           <button onClick={() => setPage("reports")}>Reports</button>
+          <button onClick={() => setPage("communicationReport")}>Communication Logs</button>
         </div>
       </section>
     </>

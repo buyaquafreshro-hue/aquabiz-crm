@@ -26,6 +26,7 @@ const InventoryPage = lazy(() => import("./pages/InventoryPage").then((module) =
 const PlansPage = lazy(() => import("./pages/PlansPage").then((module) => ({ default: module.PlansPage })));
 const InvoicesPage = lazy(() => import("./pages/InvoicesPage").then((module) => ({ default: module.InvoicesPage })));
 const ReportsPage = lazy(() => import("./pages/ReportsPage").then((module) => ({ default: module.ReportsPage })));
+const CommunicationReportPage = lazy(() => import("./pages/CommunicationReportPage").then((module) => ({ default: module.CommunicationReportPage })));
 const CustomerHistoryPage = lazy(() => import("./pages/CustomerHistoryPage").then((module) => ({ default: module.CustomerHistoryPage })));
 const CollectionsPage = lazy(() => import("./pages/CollectionsPage").then((module) => ({ default: module.CollectionsPage })));
 const BusinessSettingsPage = lazy(() => import("./pages/BusinessSettingsPage").then((module) => ({ default: module.BusinessSettingsPage })));
@@ -73,6 +74,7 @@ const ADMIN_RESTORABLE_PAGES = new Set([
   "emi",
   "bom",
   "payroll",
+  "communicationReport",
 ]);
 
 function getSavedAdminPage() {
@@ -515,8 +517,9 @@ export default function App() {
         {page === "customerHistory" && <CustomerHistoryPage mode="search" customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} businessSettings={businessSettings} onUpdated={loadAll} onCustomerOpen={(mobile) => { setSelectedCustomerMobile(mobile); setPage("customerDetail"); }} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "", area: customer.area || "" }); setPage("booking"); }} />}
         {page === "customerDetail" && <CustomerHistoryPage mode="detail" initialMobile={selectedCustomerMobile} customers={customers} bookings={bookings} jobs={jobs} technicians={technicians} invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} usage={usage} coverages={coverages} leads={leads} businessSettings={businessSettings} onUpdated={loadAll} onBack={() => setPage("customers")} onCreateBooking={(customer) => { setBookingDraft({ customer_name: customer.name, mobile: customer.mobile, address: customer.address || "", area: customer.area || "" }); setPage("booking"); }} />}
         {page === "business" && <BusinessSettingsPage settings={businessSettings} language={language} setLanguage={setLanguage} onUpdated={loadAll} />}
-        {page === "invoices" && <InvoicesPage invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} businessSettings={businessSettings} onUpdated={loadAll} />}
+        {page === "invoices" && <InvoicesPage invoices={invoices} invoiceItems={invoiceItems} invoicePayments={invoicePayments} businessSettings={businessSettings} customers={customers} bookings={bookings} onUpdated={loadAll} />}
         {page === "settings" && <SettingsPage services={services} serviceAreas={serviceAreas} setPage={setPage} onUpdated={loadAll} />}
+        {page === "communicationReport" && <CommunicationReportPage />}
         {page === "technicianTracking" && <TechnicianTracking technicians={technicians} />}
         {page === "expenses" && <ExpensesPage expenseCategories={expenseCategories} expenses={expenses} onUpdated={loadAll} />}
         {page === "cashbook" && <CashbookPage invoices={invoices} invoicePayments={invoicePayments} expenses={expenses} payrollRuns={payrollRuns} cashbookOpenings={cashbookOpenings} onUpdated={loadAll} />}

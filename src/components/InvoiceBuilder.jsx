@@ -12,6 +12,7 @@ import { getText } from "../constants/text";
 export function InvoiceBuilder({ job, booking, services = [], inventory, technicianParts = [], coverages, invoices, amcPlans = [], products = [], salesPersons = [], businessSettings = {}, defaultInvoiceType = "service", completionMode = false, closedBy, language = "en", onClose, onDone }) {
   const t = getText(language);
   const [invoiceType, setInvoiceType] = useState(defaultInvoiceType);
+  const [isGstInvoice, setIsGstInvoice] = useState(!!businessSettings?.gst_enabled);
   const matchingService = services.find((service) => String(service.name || "").trim().toLowerCase() === String(booking?.service_type || "").trim().toLowerCase());
   const defaultServiceCharge = Number(matchingService?.price ?? booking?.booking_amount ?? 0);
   const [actualServiceCharge, setActualServiceCharge] = useState(String(defaultServiceCharge || 0));
@@ -88,8 +89,8 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
           ? "upi"
           : "pending";
   const upiAmountNumber = Number(upiAmount || 0);
-  const upiId = businessSettings?.upi_id || "";
-  const upiName = businessSettings?.upi_name || businessSettings?.business_name || "AquaBiz";
+  const upiId = isGstInvoice ? (businessSettings?.gst_upi_id || businessSettings?.upi_id || "") : (businessSettings?.upi_id || "");
+  const upiName = isGstInvoice ? (businessSettings?.gst_upi_name || businessSettings?.upi_name || businessSettings?.business_name || "AquaBiz") : (businessSettings?.upi_name || businessSettings?.business_name || "AquaBiz");
   const isEmiInvoice = paymentMode === "emi";
   const productPrice = invoiceType === "new_sale" ? productAmount : total;
   const downPaymentCash = isEmiInvoice ? Number(cashAmount || 0) : 0;
@@ -336,6 +337,7 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
           invoice_reason: isZeroInvoice ? zeroInvoiceReason.trim() : serviceCovered ? "Covered under AMC/Warranty" : "",
           coverage_type: isZeroInvoice ? "zero_invoice" : activeCoverage?.source_type || invoiceType,
           is_zero_invoice: isZeroInvoice,
+          is_gst_invoice: isGstInvoice,
           sales_person_id: selectedSalesPerson?.id || null,
           sales_incentive_amount: salesIncentiveAmount,
           cash_amount: Number(cashAmount || 0),
@@ -367,6 +369,8 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
           rental_start_date: invoiceType === "rental" ? rentalStartDate : null,
           rental_next_due_date: invoiceType === "rental" ? nextMonthlyDate(rentalStartDate) : null,
           coverage_id: activeCoverage?.id || null,
+          warranty_terms: invoiceType === "amc" ? selectedPlan?.notes : invoiceType === "new_sale" ? selectedProduct?.notes : null,
+          customer_address: booking.address || null,
         },
       ])
       .select()
@@ -595,6 +599,13 @@ export function InvoiceBuilder({ job, booking, services = [], inventory, technic
           <button className={invoiceType === "amc" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("amc")}>{t.amcSale}</button>
           <button className={invoiceType === "new_sale" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("new_sale")}>{t.newRoSale}</button>
           <button className={invoiceType === "rental" ? "chip active" : "chip"} type="button" onClick={() => setInvoiceType("rental")}>{t.roRental}</button>
+        </div>
+      </FormCard>
+
+      <FormCard label="Format">
+        <div className="chip-grid">
+          <button className={!isGstInvoice ? "chip active" : "chip"} type="button" onClick={() => setIsGstInvoice(false)}>Normal Invoice</button>
+          <button className={isGstInvoice ? "chip active" : "chip"} type="button" onClick={() => setIsGstInvoice(true)}>GST Invoice</button>
         </div>
       </FormCard>
 

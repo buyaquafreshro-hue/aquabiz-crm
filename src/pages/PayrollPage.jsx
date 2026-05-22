@@ -29,8 +29,9 @@ const emptyAdvance = {
 };
 
 function Accordion({ title, count, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <details className="settings-accordion" defaultOpen={defaultOpen}>
+    <details className="settings-accordion" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
         <span>{title}</span>
         {typeof count === "number" && <strong>{count}</strong>}
